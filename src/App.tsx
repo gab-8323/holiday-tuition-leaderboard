@@ -5,16 +5,16 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { 
-  Users, 
-  Trophy, 
-  Calendar, 
-  Plus, 
-  Trash2, 
-  Edit2, 
-  ChevronRight, 
-  BarChart3, 
-  TrendingUp, 
+import {
+  Users,
+  Trophy,
+  Calendar,
+  Plus,
+  Trash2,
+  Edit2,
+  ChevronRight,
+  BarChart3,
+  TrendingUp,
   Search,
   LogOut,
   Lock,
@@ -28,15 +28,15 @@ import {
   Sparkles,
   Zap
 } from "lucide-react";
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer, 
-  LineChart, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
   Line,
   Cell
 } from "recharts";
@@ -95,12 +95,12 @@ export default function App() {
     try {
       const res = await fetch("/api/data");
       const contentType = res.headers.get("content-type");
-      
+
       if (!res.ok) {
         const text = await res.text();
         throw new Error(`Server responded with ${res.status}: ${text.slice(0, 100)}`);
       }
-      
+
       if (!contentType || !contentType.includes("application/json")) {
         const text = await res.text();
         throw new Error(`Expected JSON but got ${contentType}: ${text.slice(0, 100)}`);
@@ -149,7 +149,7 @@ export default function App() {
       const dailyPoints = points
         .filter(p => isSameDay(parseISO(p.date), today))
         .reduce((sum, p) => sum + p.points, 0);
-      
+
       return {
         ...student,
         totalPoints,
@@ -169,7 +169,7 @@ export default function App() {
     }).filter(s => s.totalPoints > 0).sort((a, b) => b.totalPoints - a.totalPoints);
   }, [data, dailyViewDate]);
 
-  const filteredLeaderboard = studentStats.filter(s => 
+  const filteredLeaderboard = studentStats.filter(s =>
     s.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
@@ -193,8 +193,8 @@ export default function App() {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center space-y-8">
-        <motion.div 
-          animate={{ 
+        <motion.div
+          animate={{
             rotate: [0, 10, -10, 0],
             scale: [1, 1.1, 1]
           }}
@@ -206,7 +206,7 @@ export default function App() {
         <div className="text-center">
           <h1 className="text-2xl font-black text-white tracking-[0.3em] uppercase mb-2">Loading Stats</h1>
           <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden mx-auto">
-            <motion.div 
+            <motion.div
               initial={{ x: "-100%" }}
               animate={{ x: "100%" }}
               transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
@@ -221,10 +221,10 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans pb-20 selection:bg-royal-gold selection:text-black overflow-x-hidden">
       <div className="noise-overlay" />
-      
+
       {/* Dynamic Spotlight Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <motion.div 
+        <motion.div
           animate={{
             x: [0, 100, -100, 0],
             y: [0, -50, 50, 0],
@@ -237,7 +237,7 @@ export default function App() {
           }}
           className="absolute -top-[20%] -left-[10%] w-[70%] h-[70%] bg-indigo-600/10 blur-[150px] rounded-full"
         />
-        <motion.div 
+        <motion.div
           animate={{
             x: [0, -120, 120, 0],
             y: [0, 80, -80, 0],
@@ -257,8 +257,8 @@ export default function App() {
         {[...Array(20)].map((_, i) => (
           <motion.div
             key={i}
-            initial={{ 
-              x: Math.random() * 100 + "%", 
+            initial={{
+              x: Math.random() * 100 + "%",
               y: Math.random() * 100 + "%",
               opacity: Math.random() * 0.5
             }}
@@ -297,10 +297,10 @@ export default function App() {
               </div>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-2 sm:gap-4 flex-shrink-0">
             {isAdmin && (
-              <button 
+              <button
                 onClick={() => {
                   setBulkPoints({});
                   setShowBulkAdd(true);
@@ -317,14 +317,14 @@ export default function App() {
               </button>
             )}
             {isAdmin ? (
-              <button 
+              <button
                 onClick={() => setIsAdmin(false)}
                 className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-all"
               >
                 <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             ) : (
-              <button 
+              <button
                 onClick={() => setShowLogin(true)}
                 className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 text-slate-400 hover:text-royal-gold hover:bg-royal-gold/10 transition-all"
               >
@@ -349,13 +349,13 @@ export default function App() {
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
                 "flex items-center gap-2 sm:gap-3 px-4 sm:px-10 py-3.5 sm:py-5 rounded-[1.5rem] sm:rounded-[2rem] text-[10px] sm:text-xs font-black transition-all whitespace-nowrap flex-1 justify-center tracking-[0.1em] sm:tracking-[0.2em] relative group",
-                activeTab === tab.id 
-                  ? "text-black" 
+                activeTab === tab.id
+                  ? "text-black"
                   : "text-slate-500 hover:text-slate-300"
               )}
             >
               {activeTab === tab.id && (
-                <motion.div 
+                <motion.div
                   layoutId="activeTab"
                   className="absolute inset-0 royal-gradient-gold rounded-[1.5rem] sm:rounded-[2rem] shadow-xl"
                   transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
@@ -374,7 +374,7 @@ export default function App() {
               {/* Top 3 Podium */}
               <div className="flex justify-center items-end gap-2 sm:gap-10 pt-16 sm:pt-20 pb-8 sm:pb-12">
                 {/* 2nd Place */}
-                <motion.div 
+                <motion.div
                   whileHover={{ y: -10, scale: 1.02 }}
                   className="flex flex-col items-center group cursor-pointer"
                   onClick={() => setSelectedStudentId(top3[1]?.id)}
@@ -399,13 +399,13 @@ export default function App() {
                 </motion.div>
 
                 {/* 1st Place */}
-                <motion.div 
+                <motion.div
                   whileHover={{ y: -20, scale: 1.05 }}
                   className="flex flex-col items-center group -translate-y-8 sm:-translate-y-12 cursor-pointer z-10"
                   onClick={() => setSelectedStudentId(top3[0]?.id)}
                 >
                   <div className="relative mb-6 sm:mb-8">
-                    <motion.div 
+                    <motion.div
                       animate={{ y: [0, -10, 0], rotate: [0, 5, -5, 0] }}
                       transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
                       className="absolute -top-12 sm:-top-16 left-1/2 -translate-x-1/2 z-20"
@@ -438,7 +438,7 @@ export default function App() {
                 </motion.div>
 
                 {/* 3rd Place */}
-                <motion.div 
+                <motion.div
                   whileHover={{ y: -10, scale: 1.02 }}
                   className="flex flex-col items-center group cursor-pointer"
                   onClick={() => setSelectedStudentId(top3[2]?.id)}
@@ -464,78 +464,78 @@ export default function App() {
               </div>
 
               {/* List - Modern Glass Card */}
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="bg-white/5 backdrop-blur-2xl rounded-[3rem] border border-white/10 shadow-3xl overflow-hidden"
               >
                 {filteredLeaderboard.map((student, index) => (
-                  <motion.div 
+                  <motion.div
                     key={student.id}
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: index * 0.05 }}
                     onClick={() => setSelectedStudentId(student.id)}
-                    className="group flex items-center gap-6 p-6 hover:bg-white/5 transition-all cursor-pointer border-b border-white/5 last:border-0 relative overflow-hidden"
+                    className="group flex items-center gap-3 sm:gap-6 p-4 sm:p-6 hover:bg-white/5 transition-all cursor-pointer border-b border-white/5 last:border-0 relative overflow-hidden"
                     whileHover={{ x: 10, backgroundColor: "rgba(255, 255, 255, 0.05)" }}
                   >
                     {index === 0 && <div className="absolute inset-0 shimmer opacity-[0.03] pointer-events-none" />}
-                    <div className="w-12 flex justify-center">
+                    <div className="w-8 sm:w-12 flex justify-center flex-shrink-0">
                       {index < 3 ? (
                         <div className={cn(
-                          "w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-xl border border-white/20",
+                          "w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center font-black text-[10px] sm:text-sm shadow-xl border border-white/20",
                           index === 0 ? "royal-gradient-gold text-black" :
-                          index === 1 ? "bg-slate-300 text-slate-900" :
-                          "bg-amber-800 text-white"
+                            index === 1 ? "bg-slate-300 text-slate-900" :
+                              "bg-amber-800 text-white"
                         )}>
                           {index + 1}
                         </div>
                       ) : (
-                        <span className="text-slate-600 font-black text-xl font-mono">{index + 1}</span>
+                        <span className="text-slate-600 font-black text-sm sm:text-xl font-mono">{index + 1}</span>
                       )}
                     </div>
-                    <div className="relative">
+                    <div className="relative flex-shrink-0">
                       <div className={cn(
-                        "w-16 h-16 rounded-2xl overflow-hidden bg-slate-900 border transition-all duration-500 group-hover:scale-110 group-hover:rotate-3",
+                        "w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl overflow-hidden bg-slate-900 border transition-all duration-500 group-hover:scale-110 group-hover:rotate-3",
                         index === 0 ? "border-royal-gold/50 shadow-[0_0_20px_rgba(255,215,0,0.2)]" : "border-white/10"
                       )}>
                         {student.photo ? (
                           <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-slate-700">
-                            <Users className="w-8 h-8" />
+                            <Users className="w-6 h-6 sm:w-8 sm:h-8" />
                           </div>
                         )}
                       </div>
                       {index === 0 && (
-                        <div className="absolute -top-2 -right-2 bg-royal-gold rounded-full p-1 shadow-xl">
-                          <Crown className="w-3 h-3 text-black" />
+                        <div className="absolute -top-1.5 -right-1.5 bg-royal-gold rounded-full p-0.5 sm:p-1 shadow-xl">
+                          <Crown className="w-2 h-2 sm:w-3 sm:h-3 text-black" />
                         </div>
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-4">
-                        <h3 className="font-black text-xl text-white truncate tracking-tight group-hover:text-royal-gold transition-colors">{student.name}</h3>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+                        <h3 className="font-black text-sm sm:text-xl text-white truncate tracking-tight group-hover:text-royal-gold transition-colors">{student.name}</h3>
                         {getBadge(student.totalPoints) && (
-                          <span className="text-[10px] font-black bg-white/5 text-slate-400 px-3 py-1.5 rounded-xl uppercase tracking-widest border border-white/10">
+                          <span className="hidden sm:inline-block text-[8px] sm:text-[10px] font-black bg-white/5 text-slate-400 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl uppercase tracking-widest border border-white/10">
                             {getBadge(student.totalPoints)}
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-5 mt-1.5">
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em]">Rank #{index + 1}</p>
-                        <div className="h-1 w-1 rounded-full bg-slate-800" />
-                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em]">{student.history.length} Achievements</p>
+                      <div className="flex items-center gap-2 sm:gap-5 mt-0.5 sm:mt-1.5">
+                        <p className="text-[8px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-[0.1em] sm:tracking-[0.2em]">Rank #{index + 1}</p>
+                        <div className="h-0.5 w-0.5 sm:h-1 sm:w-1 rounded-full bg-slate-800" />
+                        <p className="hidden sm:block text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em]">{student.history.length} Achievements</p>
                       </div>
                     </div>
-                    <div className="text-right mr-4">
+                    <div className="text-right flex-shrink-0">
                       <p className={cn(
-                        "text-3xl font-black font-mono transition-colors",
+                        "text-xl sm:text-3xl font-black font-mono transition-colors",
                         index === 0 ? "text-royal-gold" : "text-white group-hover:text-royal-gold"
                       )}>{student.totalPoints}</p>
-                      <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em]">Points</p>
+                      <p className="text-[8px] sm:text-[10px] text-slate-500 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Points</p>
                     </div>
-                    <ChevronRight className="w-6 h-6 text-slate-800 group-hover:text-royal-gold group-hover:translate-x-1 transition-all" />
+                    <ChevronRight className="hidden sm:block w-6 h-6 text-slate-800 group-hover:text-royal-gold group-hover:translate-x-1 transition-all" />
                   </motion.div>
                 ))}
               </motion.div>
@@ -551,8 +551,8 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-4 bg-white/5 backdrop-blur-xl border border-white/10 p-3 rounded-3xl shadow-2xl group">
                   <Calendar className="w-5 h-5 text-royal-gold ml-3 group-hover:scale-110 transition-transform" />
-                  <input 
-                    type="date" 
+                  <input
+                    type="date"
                     value={dailyViewDate}
                     onChange={(e) => setDailyViewDate(e.target.value)}
                     className="bg-transparent text-white font-black text-sm outline-none pr-6 py-2 uppercase tracking-widest cursor-pointer"
@@ -566,7 +566,7 @@ export default function App() {
                   <div className="flex justify-center items-end gap-2 sm:gap-10 pt-16 sm:pt-20 pb-8 sm:pb-12">
                     {/* 2nd Place */}
                     {dailyLeaderboard[1] && (
-                      <motion.div 
+                      <motion.div
                         whileHover={{ y: -10, scale: 1.02 }}
                         className="flex flex-col items-center group cursor-pointer"
                         onClick={() => setSelectedStudentId(dailyLeaderboard[1].id)}
@@ -593,13 +593,13 @@ export default function App() {
 
                     {/* 1st Place */}
                     {dailyLeaderboard[0] && (
-                      <motion.div 
+                      <motion.div
                         whileHover={{ y: -20, scale: 1.05 }}
                         className="flex flex-col items-center group -translate-y-8 sm:-translate-y-12 cursor-pointer z-10"
                         onClick={() => setSelectedStudentId(dailyLeaderboard[0].id)}
                       >
                         <div className="relative mb-6 sm:mb-8">
-                          <motion.div 
+                          <motion.div
                             animate={{ y: [0, -10, 0], rotate: [0, 5, -5, 0] }}
                             transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
                             className="absolute -top-12 sm:-top-16 left-1/2 -translate-x-1/2 z-20"
@@ -634,7 +634,7 @@ export default function App() {
 
                     {/* 3rd Place */}
                     {dailyLeaderboard[2] && (
-                      <motion.div 
+                      <motion.div
                         whileHover={{ y: -10, scale: 1.02 }}
                         className="flex flex-col items-center group cursor-pointer"
                         onClick={() => setSelectedStudentId(dailyLeaderboard[2].id)}
@@ -661,65 +661,65 @@ export default function App() {
                   </div>
 
                   {/* Daily List */}
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="bg-white/5 backdrop-blur-2xl rounded-[3rem] border border-white/10 shadow-3xl overflow-hidden"
                   >
                     {dailyLeaderboard.map((student, index) => (
-                      <motion.div 
+                      <motion.div
                         key={student.id}
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.05 }}
                         onClick={() => setSelectedStudentId(student.id)}
-                        className="group flex items-center gap-6 p-6 hover:bg-white/5 transition-all cursor-pointer border-b border-white/5 last:border-0 relative overflow-hidden"
+                        className="group flex items-center gap-3 sm:gap-6 p-4 sm:p-6 hover:bg-white/5 transition-all cursor-pointer border-b border-white/5 last:border-0 relative overflow-hidden"
                         whileHover={{ x: 10, backgroundColor: "rgba(255, 255, 255, 0.05)" }}
                       >
-                        <div className="w-12 flex justify-center">
+                        <div className="w-8 sm:w-12 flex justify-center flex-shrink-0">
                           {index < 3 ? (
                             <div className={cn(
-                              "w-10 h-10 rounded-2xl flex items-center justify-center font-black text-sm shadow-xl border border-white/20",
+                              "w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center font-black text-[10px] sm:text-sm shadow-xl border border-white/20",
                               index === 0 ? "royal-gradient-gold text-black" :
-                              index === 1 ? "bg-slate-300 text-slate-900" :
-                              "bg-amber-800 text-white"
+                                index === 1 ? "bg-slate-300 text-slate-900" :
+                                  "bg-amber-800 text-white"
                             )}>
                               {index + 1}
                             </div>
                           ) : (
-                            <span className="text-slate-600 font-black text-xl font-mono">{index + 1}</span>
+                            <span className="text-slate-600 font-black text-sm sm:text-xl font-mono">{index + 1}</span>
                           )}
                         </div>
-                        <div className="relative">
+                        <div className="relative flex-shrink-0">
                           <div className={cn(
-                            "w-16 h-16 rounded-2xl overflow-hidden bg-slate-900 border transition-all duration-500 group-hover:scale-110 group-hover:rotate-3",
+                            "w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl overflow-hidden bg-slate-900 border transition-all duration-500 group-hover:scale-110 group-hover:rotate-3",
                             index === 0 ? "border-royal-gold/50 shadow-[0_0_20px_rgba(255,215,0,0.2)]" : "border-white/10"
                           )}>
                             {student.photo ? (
                               <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-slate-700">
-                                <Users className="w-8 h-8" />
+                                <Users className="w-6 h-6 sm:w-8 sm:h-8" />
                               </div>
                             )}
                           </div>
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-4">
-                            <h3 className="font-black text-xl text-white truncate tracking-tight group-hover:text-royal-gold transition-colors">{student.name}</h3>
+                            <h3 className="font-black text-sm sm:text-xl text-white truncate tracking-tight group-hover:text-royal-gold transition-colors">{student.name}</h3>
                           </div>
-                          <div className="flex items-center gap-5 mt-1.5">
-                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em]">Daily Rank #{index + 1}</p>
+                          <div className="flex items-center gap-2 sm:gap-5 mt-0.5 sm:mt-1.5">
+                            <p className="text-[8px] sm:text-[10px] text-slate-500 font-bold uppercase tracking-[0.1em] sm:tracking-[0.2em]">Daily Rank #{index + 1}</p>
                           </div>
                         </div>
-                        <div className="text-right mr-4">
+                        <div className="text-right flex-shrink-0">
                           <p className={cn(
-                            "text-3xl font-black font-mono transition-colors",
+                            "text-xl sm:text-3xl font-black font-mono transition-colors",
                             index === 0 ? "text-royal-gold" : "text-white group-hover:text-royal-gold"
                           )}>{student.totalPoints}</p>
-                          <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em]">Today's Pts</p>
+                          <p className="text-[8px] sm:text-[10px] text-slate-500 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Today's Pts</p>
                         </div>
-                        <ChevronRight className="w-6 h-6 text-slate-800 group-hover:text-royal-gold group-hover:translate-x-1 transition-all" />
+                        <ChevronRight className="hidden sm:block w-6 h-6 text-slate-800 group-hover:text-royal-gold group-hover:translate-x-1 transition-all" />
                       </motion.div>
                     ))}
                   </motion.div>
@@ -754,7 +754,7 @@ export default function App() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                       <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
                       <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
-                      <Tooltip 
+                      <Tooltip
                         contentStyle={{ backgroundColor: '#000', borderRadius: '2rem', border: '1px solid rgba(255,215,0,0.2)', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.8)' }}
                         itemStyle={{ color: '#FFD700', fontWeight: 900 }}
                         cursor={{ fill: 'rgba(255,255,255,0.03)' }}
@@ -792,7 +792,7 @@ export default function App() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
                       <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
                       <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
-                      <Tooltip 
+                      <Tooltip
                         contentStyle={{ backgroundColor: '#000', borderRadius: '2rem', border: '1px solid rgba(16,185,129,0.2)', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.8)' }}
                         itemStyle={{ color: '#10b981', fontWeight: 900 }}
                       />
@@ -811,7 +811,7 @@ export default function App() {
                   <h2 className="text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500">STUDENT ROSTER</h2>
                   <p className="text-slate-500 text-sm font-bold uppercase tracking-[0.3em] mt-1">Manage Your Royal Academy</p>
                 </div>
-                <button 
+                <button
                   onClick={() => setShowAddStudent(true)}
                   className="relative group overflow-hidden px-8 py-4 rounded-2xl font-black text-sm transition-all shadow-2xl"
                 >
@@ -825,7 +825,7 @@ export default function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
                 {data.students.map((student, index) => (
-                  <motion.div 
+                  <motion.div
                     key={student.id}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -834,13 +834,13 @@ export default function App() {
                     className="group bg-white/5 backdrop-blur-2xl border border-white/10 p-8 rounded-[3rem] hover:border-white/20 transition-all shadow-2xl relative overflow-hidden"
                   >
                     <div className="absolute top-0 right-0 p-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
-                      <button 
+                      <button
                         onClick={() => setEditingStudent(student)}
                         className="p-3 bg-white/10 rounded-2xl text-white hover:bg-royal-gold hover:text-black transition-all shadow-xl backdrop-blur-md"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button 
+                      <button
                         onClick={async () => {
                           if (confirm(`Expel ${student.name}?`)) {
                             await fetch(`/api/students/${student.id}`, { method: "DELETE" });
@@ -852,7 +852,7 @@ export default function App() {
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
-                    
+
                     <div className="flex flex-col items-center text-center relative z-10">
                       <div className="relative mb-6">
                         <div className="absolute -inset-1 bg-gradient-to-r from-royal-gold to-amber-600 rounded-[2rem] blur opacity-0 group-hover:opacity-20 transition-opacity"></div>
@@ -868,8 +868,8 @@ export default function App() {
                       </div>
                       <h3 className="font-black text-2xl text-white mb-2 uppercase tracking-tight group-hover:text-royal-gold transition-colors">{student.name}</h3>
                       <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] mb-8">Member since {format(parseISO(student.createdAt), "MMM yyyy")}</p>
-                      
-                      <button 
+
+                      <button
                         onClick={() => setShowAddPoints(student.id)}
                         className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl font-black text-xs text-white hover:bg-royal-gold hover:text-black hover:border-transparent transition-all uppercase tracking-widest shadow-xl"
                       >
@@ -888,20 +888,20 @@ export default function App() {
       <AnimatePresence>
         {selectedStudentId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" 
-              onClick={() => setSelectedStudentId(null)} 
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl"
+              onClick={() => setSelectedStudentId(null)}
             />
             {(() => {
               const student = studentStats.find(s => s.id === selectedStudentId);
               if (!student) return null;
               const rank = studentStats.findIndex(s => s.id === selectedStudentId) + 1;
-              
+
               return (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, scale: 0.9, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -912,7 +912,7 @@ export default function App() {
                     <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
                       <div className="absolute top-[-20%] left-[-20%] w-[140%] h-[140%] border-[20px] border-white rounded-full" />
                     </div>
-                    
+
                     <div className="relative mb-8">
                       <div className="absolute -inset-2 bg-royal-gold/20 blur-2xl rounded-full animate-pulse"></div>
                       <div className="relative w-32 h-32 sm:w-40 sm:h-40 rounded-[2.5rem] border-4 border-royal-gold/50 overflow-hidden bg-slate-900 shadow-2xl rotate-3">
@@ -928,7 +928,7 @@ export default function App() {
                         #{rank}
                       </div>
                     </div>
-                    
+
                     <h2 className="text-3xl font-black text-white tracking-tighter mb-2 uppercase">{student.name}</h2>
                     <div className="flex flex-wrap justify-center gap-2 mb-8">
                       {getBadge(student.totalPoints) && (
@@ -937,7 +937,7 @@ export default function App() {
                         </span>
                       )}
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4 w-full">
                       <div className="bg-black/30 backdrop-blur-xl p-4 rounded-2xl border border-white/10">
                         <p className="text-[10px] text-royal-gold font-black uppercase tracking-widest mb-1">Total</p>
@@ -958,7 +958,7 @@ export default function App() {
                         <X className="w-6 h-6" />
                       </button>
                     </div>
-                    
+
                     <div className="flex-1 overflow-y-auto pr-2 space-y-4 no-scrollbar">
                       {student.history.length > 0 ? (
                         student.history.map((record) => (
@@ -971,7 +971,7 @@ export default function App() {
                               <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">{format(parseISO(record.date), "MMMM dd, yyyy")}</p>
                             </div>
                             {isAdmin && (
-                              <button 
+                              <button
                                 onClick={async (e) => {
                                   e.stopPropagation();
                                   if (confirm("Delete this point record?")) {
@@ -1007,14 +1007,14 @@ export default function App() {
       <AnimatePresence>
         {editingStudent && (
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" 
-              onClick={() => setEditingStudent(null)} 
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              onClick={() => setEditingStudent(null)}
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -1036,9 +1036,9 @@ export default function App() {
               }} className="space-y-8 relative z-10">
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Royal Name</label>
-                  <input 
+                  <input
                     name="name"
-                    type="text" 
+                    type="text"
                     required
                     defaultValue={editingStudent.name}
                     className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight transition-all"
@@ -1047,9 +1047,9 @@ export default function App() {
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Update Portrait</label>
                   <div className="relative group">
-                    <input 
+                    <input
                       name="photo"
-                      type="file" 
+                      type="file"
                       accept="image/*"
                       className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-slate-500 font-black text-xs file:mr-6 file:py-2 file:px-6 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:royal-gradient-gold file:text-black hover:file:scale-105 transition-all"
                     />
@@ -1068,14 +1068,14 @@ export default function App() {
       <AnimatePresence>
         {showBulkAdd && (
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" 
-              onClick={() => setShowBulkAdd(false)} 
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              onClick={() => setShowBulkAdd(false)}
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -1090,11 +1090,11 @@ export default function App() {
                   <X className="w-8 h-8" />
                 </button>
               </div>
-              
+
               <div className="p-10 bg-white/5 border-b border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-8">
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Category</label>
-                  <select 
+                  <select
                     value={bulkCategory}
                     onChange={(e) => setBulkCategory(e.target.value)}
                     className="w-full px-8 py-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white uppercase tracking-widest appearance-none cursor-pointer"
@@ -1102,6 +1102,8 @@ export default function App() {
                     <option value="Math Quiz" className="bg-slate-900">Math Quiz</option>
                     <option value="GK Challenge" className="bg-slate-900">GK Challenge</option>
                     <option value="Handwriting" className="bg-slate-900">Handwriting</option>
+                    <option value="On Time" className="bg-slate-900">On Time</option>
+                    <option value="Behaviour" className="bg-slate-900">Behaviour</option>
                     <option value="Game" className="bg-slate-900">Game</option>
                     <option value="Attendance" className="bg-slate-900">Attendance</option>
                     <option value="Other" className="bg-slate-900">Other</option>
@@ -1109,8 +1111,8 @@ export default function App() {
                 </div>
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Date</label>
-                  <input 
-                    type="date" 
+                  <input
+                    type="date"
                     value={bulkDate}
                     onChange={(e) => setBulkDate(e.target.value)}
                     className="w-full px-8 py-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white uppercase tracking-widest cursor-pointer"
@@ -1134,8 +1136,8 @@ export default function App() {
                       <h4 className="font-black text-lg text-white truncate uppercase tracking-tight group-hover:text-royal-gold transition-colors">{student.name}</h4>
                     </div>
                     <div className="w-32">
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         placeholder="0"
                         value={bulkPoints[student.id] || ""}
                         onChange={(e) => setBulkPoints(prev => ({ ...prev, [student.id]: e.target.value }))}
@@ -1150,7 +1152,7 @@ export default function App() {
               </div>
 
               <div className="p-10 bg-slate-950 border-t border-white/5">
-                <button 
+                <button
                   onClick={async () => {
                     const payload = Object.entries(bulkPoints).map(([studentId, points]) => ({
                       studentId,
@@ -1158,7 +1160,7 @@ export default function App() {
                       description: bulkCategory,
                       date: bulkDate
                     }));
-                    
+
                     if (payload.length === 0) return;
 
                     await fetch("/api/points/bulk", {
@@ -1166,7 +1168,7 @@ export default function App() {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ points: payload })
                     });
-                    
+
                     setShowBulkAdd(false);
                     fetchData();
                   }}
@@ -1185,14 +1187,14 @@ export default function App() {
       <AnimatePresence>
         {showLogin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" 
-              onClick={() => setShowLogin(false)} 
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              onClick={() => setShowLogin(false)}
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -1209,9 +1211,9 @@ export default function App() {
               <form onSubmit={handleLogin} className="space-y-8 relative z-10">
                 <div className="relative">
                   <Lock className="absolute left-6 top-1/2 -translate-y-1/2 w-6 h-6 text-royal-gold" />
-                  <input 
-                    type="password" 
-                    placeholder="SECRET ROYAL KEY" 
+                  <input
+                    type="password"
+                    placeholder="SECRET ROYAL KEY"
                     value={adminPassword}
                     onChange={(e) => setAdminPassword(e.target.value)}
                     autoFocus
@@ -1231,14 +1233,14 @@ export default function App() {
       <AnimatePresence>
         {showAddStudent && (
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" 
-              onClick={() => setShowAddStudent(false)} 
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              onClick={() => setShowAddStudent(false)}
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -1260,19 +1262,19 @@ export default function App() {
               }} className="space-y-8 relative z-10">
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Royal Full Name</label>
-                  <input 
+                  <input
                     name="name"
-                    type="text" 
+                    type="text"
                     required
-                    placeholder="e.g. Stephen Ludia" 
+                    placeholder="e.g. Stephen Ludia"
                     className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
                   />
                 </div>
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Royal Portrait</label>
-                  <input 
+                  <input
                     name="photo"
-                    type="file" 
+                    type="file"
                     accept="image/*"
                     className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-slate-500 font-black text-xs file:mr-6 file:py-2 file:px-6 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:royal-gradient-gold file:text-black hover:file:scale-105 transition-all"
                   />
@@ -1290,14 +1292,14 @@ export default function App() {
       <AnimatePresence>
         {showAddPoints && (
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" 
-              onClick={() => setShowAddPoints(null)} 
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              onClick={() => setShowAddPoints(null)}
             />
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -1319,33 +1321,35 @@ export default function App() {
                   description: formData.get("description"),
                   date: formData.get("date")
                 };
-                await fetch("/api/points", { 
-                  method: "POST", 
+                await fetch("/api/points", {
+                  method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload) 
+                  body: JSON.stringify(payload)
                 });
                 setShowAddPoints(null);
                 fetchData();
               }} className="space-y-8 relative z-10">
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Points Amount</label>
-                  <input 
+                  <input
                     name="points"
-                    type="number" 
+                    type="number"
                     required
-                    placeholder="e.g. 50" 
+                    placeholder="e.g. 50"
                     className="w-full px-8 py-6 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black text-4xl text-center placeholder:text-slate-800"
                   />
                 </div>
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Category</label>
-                  <select 
+                  <select
                     name="description"
                     className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-widest appearance-none cursor-pointer"
                   >
                     <option value="Math Quiz" className="bg-slate-900">Math Quiz</option>
                     <option value="GK Challenge" className="bg-slate-900">GK Challenge</option>
                     <option value="Handwriting" className="bg-slate-900">Handwriting</option>
+                    <option value="On Time" className="bg-slate-900">On Time</option>
+                    <option value="Behaviour" className="bg-slate-900">Behaviour</option>
                     <option value="Game" className="bg-slate-900">Game</option>
                     <option value="Attendance" className="bg-slate-900">Attendance</option>
                     <option value="Other" className="bg-slate-900">Other</option>
@@ -1353,9 +1357,9 @@ export default function App() {
                 </div>
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Date</label>
-                  <input 
+                  <input
                     name="date"
-                    type="date" 
+                    type="date"
                     defaultValue={format(new Date(), "yyyy-MM-dd")}
                     className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-widest cursor-pointer"
                   />
