@@ -26,7 +26,9 @@ import {
   X,
   Crown,
   Sparkles,
-  Zap
+  Zap,
+  Image as ImageIcon,
+  Camera
 } from "lucide-react";
 import {
   BarChart,
@@ -65,17 +67,25 @@ interface PointRecord {
   createdAt: string;
 }
 
+interface GalleryItem {
+  id: string;
+  url: string;
+  caption: string;
+  createdAt: string;
+}
+
 interface AppData {
   students: Student[];
   points: PointRecord[];
+  gallery: GalleryItem[];
 }
 
 export default function App() {
-  const [data, setData] = useState<AppData>({ students: [], points: [] });
+  const [data, setData] = useState<AppData>({ students: [], points: [], gallery: [] });
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [showLogin, setShowLogin] = useState(false);
-  const [activeTab, setActiveTab] = useState<"total" | "daily" | "admin" | "analytics">("total");
+  const [activeTab, setActiveTab] = useState<"total" | "daily" | "admin" | "analytics" | "gallery">("total");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [showAddStudent, setShowAddStudent] = useState(false);
@@ -93,6 +103,9 @@ export default function App() {
   const [isAddingNewCategoryBulk, setIsAddingNewCategoryBulk] = useState(false);
   const [isAddingNewCategorySingle, setIsAddingNewCategorySingle] = useState(false);
   const [singleCategory, setSingleCategory] = useState("");
+  const [showAddGallery, setShowAddGallery] = useState(false);
+  const [newGalleryUrl, setNewGalleryUrl] = useState("");
+  const [newGalleryCaption, setNewGalleryCaption] = useState("");
 
   // Categories logic
   const dynamicCategories = useMemo(() => {
@@ -131,6 +144,36 @@ export default function App() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleAddGallery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGalleryUrl) return;
+    try {
+      const res = await fetch("/api/gallery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: newGalleryUrl, caption: newGalleryCaption }),
+      });
+      if (res.ok) {
+        setNewGalleryUrl("");
+        setNewGalleryCaption("");
+        setShowAddGallery(false);
+        fetchData();
+      }
+    } catch (err) {
+      alert("Failed to add to gallery");
+    }
+  };
+
+  const handleDeleteGallery = async (id: string) => {
+    if (!confirm("Delete this photo from gallery?")) return;
+    try {
+      const res = await fetch(`/api/gallery/${id}`, { method: "DELETE" });
+      if (res.ok) fetchData();
+    } catch (err) {
+      alert("Failed to delete photo");
+    }
+  };
 
   // Admin Login
   const handleLogin = async (e: React.FormEvent) => {
@@ -373,6 +416,7 @@ export default function App() {
           {[
             { id: "total", label: "HALL OF FAME", icon: Award },
             { id: "daily", label: "DAILY STARS", icon: Sparkles },
+            { id: "gallery", label: "GALLERY", icon: ImageIcon },
             { id: "analytics", label: "INSIGHTS", icon: BarChart3 },
             ...(isAdmin ? [{ id: "admin", label: "ROSTER", icon: Users }] : [])
           ].map((tab) => (
@@ -957,6 +1001,78 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {activeTab === "gallery" && (
+            <div className="space-y-10">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 sm:gap-8 text-center sm:text-left">
+                <div className="flex flex-col items-center sm:items-start">
+                  <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500 uppercase whitespace-nowrap">ACADEMY GALLERY</h2>
+                  <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.3em] mt-1">Capturing Royal Moments</p>
+                </div>
+                {isAdmin && (
+                  <button
+                    onClick={() => setShowAddGallery(true)}
+                    className="relative group overflow-hidden px-8 py-4 rounded-2xl font-black text-sm transition-all shadow-2xl self-center sm:self-auto"
+                  >
+                    <div className="absolute inset-0 royal-gradient-gold opacity-90 group-hover:opacity-100 transition-opacity" />
+                    <div className="relative flex items-center gap-3 text-black">
+                      <Camera className="w-5 h-5" />
+                      <span>ADD PHOTO</span>
+                    </div>
+                  </button>
+                )}
+              </div>
+
+              {data.gallery.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[300px]">
+                  {data.gallery.map((item, index) => (
+                    <motion.div
+                      key={item.id}
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: index * 0.05 }}
+                      className={cn(
+                        "group relative rounded-[2rem] overflow-hidden border border-white/10 bg-slate-900 shadow-2xl",
+                        index % 4 === 0 ? "lg:col-span-2 lg:row-span-2" : ""
+                      )}
+                    >
+                      <img
+                        src={item.url}
+                        alt={item.caption}
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end p-8">
+                        {item.caption && (
+                          <p className="text-white font-black text-lg uppercase tracking-tight mb-2 transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
+                            {item.caption}
+                          </p>
+                        )}
+                        <p className="text-royal-gold text-[10px] font-black uppercase tracking-[0.3em] transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500 delay-75">
+                          {format(parseISO(item.createdAt), "MMMM dd, yyyy")}
+                        </p>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDeleteGallery(item.id)}
+                            className="absolute top-6 right-6 p-3 bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white rounded-xl backdrop-blur-md transition-all border border-red-500/30"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-32 text-center bg-white/5 rounded-[4rem] border border-dashed border-white/10 backdrop-blur-sm">
+                  <div className="bg-white/5 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto mb-8 shadow-3xl border border-white/10">
+                    <ImageIcon className="w-12 h-12 text-slate-700" />
+                  </div>
+                  <p className="text-slate-500 font-black text-2xl uppercase tracking-[0.3em]">The gallery is currently empty</p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </main>
 
@@ -1501,6 +1617,61 @@ export default function App() {
                 </div>
                 <button className="w-full royal-gradient-gold text-black py-6 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
                   AWARD ROYAL POINTS
+                </button>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Gallery Modal */}
+      <AnimatePresence>
+        {showAddGallery && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              onClick={() => setShowAddGallery(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-slate-950 w-full max-w-md rounded-[3rem] p-12 shadow-3xl border border-white/10 overflow-hidden"
+            >
+              <div className="absolute -top-24 -left-24 w-48 h-48 royal-gradient-gold opacity-10 blur-[80px] rounded-full" />
+              <div className="flex items-center justify-between mb-10 relative z-10">
+                <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Add to Gallery</h2>
+                <button onClick={() => setShowAddGallery(false)} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-xl">
+                  <X className="w-8 h-8" />
+                </button>
+              </div>
+              <form onSubmit={handleAddGallery} className="space-y-8 relative z-10">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Image URL</label>
+                  <input
+                    type="url"
+                    required
+                    placeholder="https://example.com/image.jpg"
+                    value={newGalleryUrl}
+                    onChange={(e) => setNewGalleryUrl(e.target.value)}
+                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black tracking-tight placeholder:text-slate-800"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Caption (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Annual Sports Day 2024"
+                    value={newGalleryCaption}
+                    onChange={(e) => setNewGalleryCaption(e.target.value)}
+                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
+                  />
+                </div>
+                <button className="w-full royal-gradient-gold text-black py-6 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
+                  PUBLISH TO GALLERY
                 </button>
               </form>
             </motion.div>

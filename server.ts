@@ -20,7 +20,7 @@ function getSupabase() {
   if (!supabase) {
     const url = process.env.SUPABASE_URL?.trim();
     const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)?.trim();
-    
+
     console.log("Initializing Supabase...");
     console.log("URL exists:", !!url, url ? `(${url.substring(0, 10)}...)` : "");
     console.log("Key exists:", !!key, key ? `(${key.substring(0, 5)}...)` : "");
@@ -77,8 +77,8 @@ async function startServer() {
   app.get("/api/health", (req, res) => {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-    res.json({ 
-      status: "ok", 
+    res.json({
+      status: "ok",
       supabaseConfigured: !!(url && key),
       env: process.env.NODE_ENV
     });
@@ -117,10 +117,54 @@ async function startServer() {
         createdAt: p.created_at
       }));
 
-      res.json({ students: mappedStudents, points: mappedPoints });
+      const { data: gallery, error: gError } = await client
+        .from("gallery")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (gError) {
+        console.warn("Gallery table might not exist yet:", gError.message);
+      }
+
+      res.json({
+        students: mappedStudents,
+        points: mappedPoints,
+        gallery: gallery || []
+      });
     } catch (error: any) {
       console.error("Error reading data from Supabase:", error);
       res.status(500).json({ error: error.message || "Failed to read data" });
+    }
+  });
+
+  app.post(["/api/gallery", "/api/gallery/"], async (req, res) => {
+    const { url, caption } = req.body;
+    try {
+      const client = getSupabase();
+      const { data, error } = await client
+        .from("gallery")
+        .insert([{ url, caption }])
+        .select()
+        .single();
+
+      if (error) throw error;
+      res.json(data);
+    } catch (error: any) {
+      console.error("Error adding to gallery:", error);
+      res.status(500).json({ error: error.message || "Failed to add to gallery" });
+    }
+  });
+
+  app.delete(["/api/gallery/:id", "/api/gallery/:id/"], async (req, res) => {
+    const { id } = req.params;
+    try {
+      const client = getSupabase();
+      const { error } = await client.from("gallery").delete().eq("id", id);
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting from gallery:", error);
+      res.status(500).json({ error: error.message || "Failed to delete from gallery" });
     }
   });
 
@@ -212,7 +256,7 @@ async function startServer() {
       // but let's be explicit if not.
       await client.from("points").delete().eq("student_id", id);
       const { error } = await client.from("students").delete().eq("id", id);
-      
+
       if (error) throw error;
       res.json({ success: true });
     } catch (error: any) {
@@ -227,11 +271,11 @@ async function startServer() {
       const client = getSupabase();
       const { data, error } = await client
         .from("points")
-        .insert([{ 
-          student_id: studentId, 
-          points: parseInt(points), 
-          description, 
-          date: date || new Date().toISOString() 
+        .insert([{
+          student_id: studentId,
+          points: parseInt(points),
+          description,
+          date: date || new Date().toISOString()
         }])
         .select()
         .single();
