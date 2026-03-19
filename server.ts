@@ -126,10 +126,17 @@ async function startServer() {
         console.warn("Gallery table might not exist yet:", gError.message);
       }
 
+      const mappedGallery = (gallery || []).map((item: any) => ({
+        id: item.id,
+        url: item.url,
+        caption: item.caption,
+        createdAt: item.created_at
+      }));
+
       res.json({
         students: mappedStudents,
         points: mappedPoints,
-        gallery: gallery || []
+        gallery: mappedGallery
       });
     } catch (error: any) {
       console.error("Error reading data from Supabase:", error);
