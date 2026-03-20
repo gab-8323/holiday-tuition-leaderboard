@@ -13,6 +13,20 @@
 @layer base {
   body {
     @apply bg-[#050505] text-white antialiased selection:bg-royal-gold/30;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+
+  img {
+    -webkit-user-drag: none;
+    -khtml-user-drag: none;
+    -moz-user-drag: none;
+    -o-user-drag: none;
+    user-drag: none;
+    pointer-events: none;
   }
 
   /* Custom Scrollbar */
