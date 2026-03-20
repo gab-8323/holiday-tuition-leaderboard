@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, Component } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Users,
@@ -80,7 +80,69 @@ interface AppData {
   gallery: GalleryItem[];
 }
 
-export default function App() {
+// Safe date formatter
+const safeFormat = (dateStr: string | undefined | null, formatStr: string) => {
+  if (!dateStr) return "N/A";
+  try {
+    const date = parseISO(dateStr);
+    if (isNaN(date.getTime())) return "Invalid Date";
+    return format(date, formatStr);
+  } catch (e) {
+    return "Invalid Date";
+  }
+};
+
+// Error Boundary Component
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class ErrorBoundary extends Component<any, any> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("Uncaught error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-red-950 flex items-center justify-center p-10 text-center border-4 border-red-500">
+          <div className="max-w-md">
+            <h1 className="text-4xl font-black text-white mb-6 uppercase tracking-tighter">Something went wrong</h1>
+            <p className="text-red-200 mb-10 font-black text-xs uppercase tracking-[0.3em]">The royal academy has encountered an unexpected error.</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-8 py-4 royal-gradient-gold text-black rounded-2xl font-black uppercase tracking-widest shadow-2xl"
+            >
+              Reload Academy
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (this as any).props.children;
+  }
+}
+
+export default function AppWrapper() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+function App() {
   const [data, setData] = useState<AppData>({ students: [], points: [], gallery: [] });
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
@@ -106,6 +168,36 @@ export default function App() {
   const [showAddGallery, setShowAddGallery] = useState(false);
   const [newGalleryUrl, setNewGalleryUrl] = useState("");
   const [newGalleryCaption, setNewGalleryCaption] = useState("");
+  const [selectedGalleryIndex, setSelectedGalleryIndex] = useState<number | null>(null);
+  const [lightboxScale, setLightboxScale] = useState(1);
+  const [initialPinchDistance, setInitialPinchDistance] = useState<number | null>(null);
+  const [initialPinchScale, setInitialPinchScale] = useState(1);
+
+  const handlePinchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const distance = Math.hypot(
+        e.touches[0].pageX - e.touches[1].pageX,
+        e.touches[0].pageY - e.touches[1].pageY
+      );
+      setInitialPinchDistance(distance);
+      setInitialPinchScale(lightboxScale);
+    }
+  };
+
+  const handlePinchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && initialPinchDistance) {
+      const distance = Math.hypot(
+        e.touches[0].pageX - e.touches[1].pageX,
+        e.touches[0].pageY - e.touches[1].pageY
+      );
+      const newScale = (distance / initialPinchDistance) * initialPinchScale;
+      setLightboxScale(Math.min(Math.max(newScale, 1), 4));
+    }
+  };
+
+  const handlePinchEnd = () => {
+    setInitialPinchDistance(null);
+  };
 
   // Categories logic
   const dynamicCategories = useMemo(() => {
@@ -143,6 +235,39 @@ export default function App() {
 
   useEffect(() => {
     fetchData();
+
+    // Global Protection Logic
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleDragStart = (e: DragEvent) => {
+      e.preventDefault();
+      return false;
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Block Ctrl+S, Ctrl+U, Ctrl+P, Ctrl+Shift+I, F12
+      if (
+        (e.ctrlKey && (e.key === 's' || e.key === 'u' || e.key === 'p')) ||
+        (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+        e.key === 'F12'
+      ) {
+        e.preventDefault();
+        return false;
+      }
+    };
+
+    window.addEventListener('contextmenu', handleContextMenu);
+    window.addEventListener('dragstart', handleDragStart);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('contextmenu', handleContextMenu);
+      window.removeEventListener('dragstart', handleDragStart);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   const handleAddGallery = async (e: React.FormEvent) => {
@@ -196,29 +321,69 @@ export default function App() {
     }
   };
 
+  const safeParseISO = (dateStr: string | undefined | null) => {
+    if (!dateStr) return new Date(0);
+    try {
+      const d = parseISO(dateStr);
+      return isNaN(d.getTime()) ? new Date(0) : d;
+    } catch {
+      return new Date(0);
+    }
+  };
+
+  const handlePrevPhoto = () => {
+    if (selectedGalleryIndex === null) return;
+    setSelectedGalleryIndex(prev =>
+      prev === 0 ? data.gallery.length - 1 : (prev ?? 0) - 1
+    );
+  };
+
+  const handleNextPhoto = () => {
+    if (selectedGalleryIndex === null) return;
+    setSelectedGalleryIndex(prev =>
+      prev === data.gallery.length - 1 ? 0 : (prev ?? 0) + 1
+    );
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (selectedGalleryIndex === null) return;
+      if (e.key === "ArrowRight") handleNextPhoto();
+      if (e.key === "ArrowLeft") handlePrevPhoto();
+      if (e.key === "Escape") setSelectedGalleryIndex(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedGalleryIndex]);
+
   // Calculations
   const allTimeStats = useMemo(() => {
+    const today = startOfDay(new Date());
     return data.students.map(student => {
       const points = data.points.filter(p => p.studentId === student.id);
       const totalPoints = points.reduce((sum, p) => sum + p.points, 0);
+      const dailyPoints = points
+        .filter(p => isSameDay(safeParseISO(p.date), today))
+        .reduce((sum, p) => sum + p.points, 0);
 
       return {
         ...student,
         totalPoints,
-        history: points.sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
+        dailyPoints,
+        history: points.sort((a, b) => safeParseISO(b.date).getTime() - safeParseISO(a.date).getTime())
       };
     }).sort((a, b) => b.totalPoints - a.totalPoints);
   }, [data]);
 
   const weeklyLeaderboard = useMemo(() => {
-    const targetDate = parseISO(weeklyViewDate);
+    const targetDate = safeParseISO(weeklyViewDate);
     const start = startOfWeek(targetDate, { weekStartsOn: 1 });
     const end = endOfWeek(targetDate, { weekStartsOn: 1 });
 
     return data.students.map(student => {
       const points = data.points
         .filter(p => {
-          const pDate = parseISO(p.date);
+          const pDate = safeParseISO(p.date);
           return p.studentId === student.id && isWithinInterval(pDate, { start, end });
         })
         .reduce((sum, p) => sum + p.points, 0);
@@ -229,16 +394,16 @@ export default function App() {
         ...student,
         totalPoints: points, // Points for this week
         allTimePoints: allPoints.reduce((sum, p) => sum + p.points, 0),
-        history: allPoints.sort((a, b) => parseISO(b.date).getTime() - parseISO(a.date).getTime())
+        history: allPoints.sort((a, b) => safeParseISO(b.date).getTime() - safeParseISO(a.date).getTime())
       };
     }).filter(s => s.totalPoints > 0).sort((a, b) => b.totalPoints - a.totalPoints);
   }, [data, weeklyViewDate]);
 
   const dailyLeaderboard = useMemo(() => {
-    const targetDate = parseISO(dailyViewDate);
+    const targetDate = safeParseISO(dailyViewDate);
     return data.students.map(student => {
       const points = data.points
-        .filter(p => p.studentId === student.id && isSameDay(parseISO(p.date), targetDate))
+        .filter(p => p.studentId === student.id && isSameDay(safeParseISO(p.date), targetDate))
         .reduce((sum, p) => sum + p.points, 0);
       return { ...student, totalPoints: points }; // Reuse totalPoints key for consistent UI
     }).filter(s => s.totalPoints > 0).sort((a, b) => b.totalPoints - a.totalPoints);
@@ -352,6 +517,126 @@ export default function App() {
         ))}
       </div>
 
+      {/* Gallery Lightbox */}
+      <AnimatePresence>
+        {selectedGalleryIndex !== null && data.gallery[selectedGalleryIndex] && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-2xl flex items-center justify-center overflow-hidden"
+            onClick={() => {
+              setSelectedGalleryIndex(null);
+              setLightboxScale(1);
+            }}
+          >
+            <button
+              onClick={() => {
+                setSelectedGalleryIndex(null);
+                setLightboxScale(1);
+              }}
+              className="absolute top-4 right-4 sm:top-6 sm:right-6 p-4 text-white/50 hover:text-white transition-colors z-[120]"
+            >
+              <X className="w-8 h-8" />
+            </button>
+
+            {/* Desktop Navigation Buttons - Hidden on Mobile */}
+            <div className="hidden sm:block absolute left-10 top-1/2 -translate-y-1/2 z-[110]">
+              <button
+                onClick={(e) => { e.stopPropagation(); handlePrevPhoto(); setLightboxScale(1); }}
+                className="p-4 rounded-full bg-white/5 border border-white/10 text-white/50 hover:text-white hover:bg-white/10 transition-all"
+              >
+                <ArrowDown className="w-6 h-6 rotate-90" />
+              </button>
+            </div>
+
+            <div className="hidden sm:block absolute right-10 top-1/2 -translate-y-1/2 z-[110]">
+              <button
+                onClick={(e) => { e.stopPropagation(); handleNextPhoto(); setLightboxScale(1); }}
+                className="p-4 rounded-full bg-white/5 border border-white/10 text-white/50 hover:text-white hover:bg-white/10 transition-all"
+              >
+                <ArrowDown className="w-6 h-6 -rotate-90" />
+              </button>
+            </div>
+
+            <motion.div
+              key={selectedGalleryIndex}
+              initial={{ x: 100, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -100, opacity: 0 }}
+              transition={{ type: "spring", damping: 30, stiffness: 300 }}
+              drag={lightboxScale === 1 ? "x" : false}
+              dragConstraints={{ left: 0, right: 0 }}
+              onDragEnd={(_, info) => {
+                if (lightboxScale > 1) return;
+                const swipe = info.offset.x;
+                if (swipe < -50) handleNextPhoto();
+                else if (swipe > 50) handlePrevPhoto();
+              }}
+              className="relative w-full h-full flex flex-col items-center justify-center"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="relative w-full h-full flex flex-col items-center justify-center p-4 sm:p-20">
+                <motion.div
+                  className="relative w-full max-w-5xl aspect-square sm:aspect-video rounded-[2rem] sm:rounded-[3rem] overflow-hidden border border-white/10 shadow-[0_0_100px_rgba(0,0,0,0.5)] cursor-zoom-in touch-none"
+                  animate={{ scale: lightboxScale }}
+                  transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                  onDoubleClick={() => setLightboxScale(prev => prev === 1 ? 2 : 1)}
+                  onTouchStart={handlePinchStart}
+                  onTouchMove={handlePinchMove}
+                  onTouchEnd={handlePinchEnd}
+                >
+                  <img
+                    src={data.gallery[selectedGalleryIndex].url}
+                    alt={data.gallery[selectedGalleryIndex].caption}
+                    className="w-full h-full object-contain bg-black/40 select-none"
+                    referrerPolicy="no-referrer"
+                    draggable={false}
+                  />
+                </motion.div>
+
+                <div className="text-center max-w-2xl px-4 mt-6 sm:mt-10">
+                  <motion.h3
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.2 }}
+                    className="text-xl sm:text-4xl font-black text-white uppercase tracking-tighter mb-2"
+                  >
+                    {data.gallery[selectedGalleryIndex].caption || "Untitled Moment"}
+                  </motion.h3>
+                  <motion.p
+                    initial={{ y: 20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.3 }}
+                    className="text-royal-gold font-black uppercase tracking-[0.4em] text-[10px] sm:text-sm"
+                  >
+                    {safeFormat(data.gallery[selectedGalleryIndex].createdAt, "MMMM dd, yyyy")}
+                  </motion.p>
+                </div>
+
+                {/* Mobile Swipe Indicator */}
+                <div className="sm:hidden mt-4 text-white/30 text-[8px] font-black uppercase tracking-[0.3em]">
+                  Swipe to navigate • Pinch or double tap to zoom
+                </div>
+
+                <div className="flex gap-2 mt-6 sm:mt-8">
+                  {data.gallery.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => { setSelectedGalleryIndex(i); setLightboxScale(1); }}
+                      className={cn(
+                        "w-1.5 h-1.5 rounded-full transition-all duration-500",
+                        i === selectedGalleryIndex ? "w-8 bg-royal-gold" : "bg-white/20 hover:bg-white/40"
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <header className="bg-black/60 backdrop-blur-2xl border-b border-white/5 sticky top-0 z-40 px-4 sm:px-6 py-4 sm:py-5">
         <div className="max-w-6xl mx-auto flex items-center justify-between gap-2">
@@ -412,7 +697,7 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 relative z-10">
         {/* Navigation Tabs */}
-        <div className="flex bg-white/5 backdrop-blur-xl p-1 sm:p-2 rounded-[1.5rem] sm:rounded-[2.5rem] border border-white/10 mb-6 sm:mb-12 no-scrollbar shadow-3xl">
+        <div className="flex items-center overflow-x-auto no-scrollbar bg-white/5 backdrop-blur-xl p-1 sm:p-2 rounded-[1.5rem] sm:rounded-[2.5rem] border border-white/10 mb-6 sm:mb-12 shadow-3xl">
           {[
             { id: "total", label: "HALL OF FAME", icon: Award },
             { id: "daily", label: "DAILY STARS", icon: Sparkles },
@@ -424,7 +709,7 @@ export default function App() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={cn(
-                "flex items-center gap-1 sm:gap-3 px-1.5 sm:px-10 py-2.5 sm:py-5 rounded-[1.2rem] sm:rounded-[2rem] text-[8px] sm:text-xs font-black transition-all whitespace-nowrap flex-1 justify-center tracking-tight sm:tracking-[0.2em] relative group",
+                "flex items-center gap-1 sm:gap-3 px-3 sm:px-10 py-2.5 sm:py-5 rounded-[1.2rem] sm:rounded-[2rem] text-[8px] sm:text-xs font-black transition-all whitespace-nowrap flex-1 min-w-max justify-center tracking-tight sm:tracking-[0.2em] relative group",
                 activeTab === tab.id
                   ? "text-black"
                   : "text-slate-500 hover:text-slate-300"
@@ -451,12 +736,12 @@ export default function App() {
                 <div className="flex flex-col items-center sm:items-start">
                   <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500 uppercase whitespace-nowrap">Weekly Hall of Fame</h2>
                   <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.3em] mt-1">
-                    {format(startOfWeek(parseISO(weeklyViewDate), { weekStartsOn: 1 }), "MMM dd")} - {format(endOfWeek(parseISO(weeklyViewDate), { weekStartsOn: 1 }), "MMM dd, yyyy")}
+                    {format(startOfWeek(safeParseISO(weeklyViewDate), { weekStartsOn: 1 }), "MMM dd")} - {format(endOfWeek(safeParseISO(weeklyViewDate), { weekStartsOn: 1 }), "MMM dd, yyyy")}
                   </p>
                 </div>
                 <div className="flex items-center bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden self-center sm:self-auto">
                   <button
-                    onClick={() => setWeeklyViewDate(format(subWeeks(parseISO(weeklyViewDate), 1), "yyyy-MM-dd"))}
+                    onClick={() => setWeeklyViewDate(format(subWeeks(safeParseISO(weeklyViewDate), 1), "yyyy-MM-dd"))}
                     className="p-3 sm:p-4 hover:bg-white/10 text-slate-400 hover:text-white transition-all border-r border-white/5"
                   >
                     <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 rotate-90" />
@@ -472,7 +757,7 @@ export default function App() {
                     />
                   </div>
                   <button
-                    onClick={() => setWeeklyViewDate(format(addWeeks(parseISO(weeklyViewDate), 1), "yyyy-MM-dd"))}
+                    onClick={() => setWeeklyViewDate(format(addWeeks(safeParseISO(weeklyViewDate), 1), "yyyy-MM-dd"))}
                     className="p-3 sm:p-4 hover:bg-white/10 text-slate-400 hover:text-white transition-all border-l border-white/5"
                   >
                     <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 -rotate-90" />
@@ -667,7 +952,7 @@ export default function App() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 sm:gap-8 text-center sm:text-left">
                 <div className="flex flex-col items-center sm:items-start">
                   <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500 uppercase whitespace-nowrap">DAILY STARS</h2>
-                  <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.3em] mt-1">Royal Performers for {format(parseISO(dailyViewDate), "MMMM dd")}</p>
+                  <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.3em] mt-1">Royal Performers for {format(safeParseISO(dailyViewDate), "MMMM dd")}</p>
                 </div>
                 <div className="flex items-center gap-4 bg-white/5 backdrop-blur-xl border border-white/10 p-3 rounded-2xl sm:rounded-3xl shadow-2xl group self-center sm:self-auto">
                   <Calendar className="w-5 h-5 text-royal-gold ml-3 group-hover:scale-110 transition-transform" />
@@ -905,7 +1190,7 @@ export default function App() {
                     <LineChart data={Array.from({ length: 7 }).map((_, i) => {
                       const date = startOfDay(subDays(new Date(), 6 - i));
                       const points = data.points
-                        .filter(p => isSameDay(parseISO(p.date), date))
+                        .filter(p => isSameDay(safeParseISO(p.date), date))
                         .reduce((sum, p) => sum + p.points, 0);
                       return { date: format(date, "MMM dd"), points };
                     })}>
@@ -987,7 +1272,7 @@ export default function App() {
                         </div>
                       </div>
                       <h3 className="font-black text-2xl text-white mb-2 uppercase tracking-tight group-hover:text-royal-gold transition-colors">{student.name}</h3>
-                      <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] mb-8">Member since {format(parseISO(student.createdAt), "MMM yyyy")}</p>
+                      <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] mb-8">Member since {safeFormat(student.createdAt, "MMM yyyy")}</p>
 
                       <button
                         onClick={() => setShowAddPoints(student.id)}
@@ -1023,9 +1308,9 @@ export default function App() {
                 )}
               </div>
 
-              {data.gallery.length > 0 ? (
+              {data.gallery && data.gallery.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[300px]">
-                  {data.gallery.map((item, index) => (
+                  {data.gallery.map((item, index) => item && (
                     <motion.div
                       key={item.id}
                       initial={{ opacity: 0, scale: 0.9 }}
@@ -1042,19 +1327,34 @@ export default function App() {
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                         referrerPolicy="no-referrer"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end p-8">
-                        {item.caption && (
-                          <p className="text-white font-black text-lg uppercase tracking-tight mb-2 transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
-                            {item.caption}
-                          </p>
-                        )}
-                        <p className="text-royal-gold text-[10px] font-black uppercase tracking-[0.3em] transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500 delay-75">
-                          {format(parseISO(item.createdAt), "MMMM dd, yyyy")}
-                        </p>
+                      <div
+                        className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-transparent opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity duration-500 flex flex-col justify-end p-6 sm:p-8 cursor-pointer"
+                        onClick={() => setSelectedGalleryIndex(index)}
+                      >
+                        <div className="transform translate-y-0 sm:translate-y-4 group-hover:translate-y-0 transition-all duration-500">
+                          {item.caption && (
+                            <h3 className="text-white font-black text-base sm:text-xl uppercase tracking-tight mb-2 leading-tight">
+                              {item.caption}
+                            </h3>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <p className="text-royal-gold text-[10px] font-black uppercase tracking-[0.3em]">
+                              {safeFormat(item.createdAt, "MMM dd, yyyy")}
+                            </p>
+                            <div className="flex items-center gap-2 text-white/40 text-[10px] font-black uppercase tracking-widest sm:hidden group-hover:flex">
+                              <span>View</span>
+                              <ArrowDown className="w-3 h-3 -rotate-90" />
+                            </div>
+                          </div>
+                        </div>
+
                         {isAdmin && (
                           <button
-                            onClick={() => handleDeleteGallery(item.id)}
-                            className="absolute top-6 right-6 p-3 bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white rounded-xl backdrop-blur-md transition-all border border-red-500/30"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteGallery(item.id);
+                            }}
+                            className="absolute top-4 right-4 sm:top-6 sm:right-6 p-3 bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl backdrop-blur-md transition-all border border-red-500/30 z-30"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -1151,33 +1451,66 @@ export default function App() {
                       </button>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto pr-1 sm:pr-2 space-y-2 sm:space-y-4 no-scrollbar">
+                    <div className="flex-1 overflow-y-auto pr-1 sm:pr-2 space-y-6 no-scrollbar">
                       {student.history.length > 0 ? (
-                        student.history.map((record) => (
-                          <div key={record.id} className="flex items-center gap-2.5 sm:gap-4 p-3 sm:p-5 bg-white/5 border border-white/5 rounded-xl sm:rounded-2xl group hover:bg-white/10 transition-all hover:translate-x-1">
-                            <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl royal-gradient-gold flex items-center justify-center text-black font-black flex-shrink-0 shadow-lg text-[10px] sm:text-base">
-                              +{record.points}
+                        (() => {
+                          const groups: { date: string; totalPoints: number; records: PointRecord[] }[] = [];
+                          student.history.forEach(record => {
+                            const dateStr = safeFormat(record.date, "MMMM dd, yyyy");
+                            const lastGroup = groups[groups.length - 1];
+                            if (lastGroup && lastGroup.date === dateStr) {
+                              lastGroup.records.push(record);
+                              lastGroup.totalPoints += record.points;
+                            } else {
+                              groups.push({ date: dateStr, totalPoints: record.points, records: [record] });
+                            }
+                          });
+
+                          return groups.map((group, gIndex) => (
+                            <div key={group.date} className="space-y-3">
+                              <div className="flex items-center gap-3">
+                                <div className="h-[1px] flex-1 bg-white/5" />
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[8px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] whitespace-nowrap">
+                                    {group.date}
+                                  </span>
+                                  <div className="w-1 h-1 rounded-full bg-royal-gold/30" />
+                                  <span className="text-[8px] sm:text-[10px] font-black text-royal-gold uppercase tracking-[0.2em] whitespace-nowrap">
+                                    {group.totalPoints} Points
+                                  </span>
+                                </div>
+                                <div className="h-[1px] flex-1 bg-white/5" />
+                              </div>
+                              <div className="space-y-2 sm:space-y-3">
+                                {group.records.map((record) => (
+                                  <div key={record.id} className="flex items-center gap-2.5 sm:gap-4 p-3 sm:p-5 bg-white/5 border border-white/5 rounded-xl sm:rounded-2xl group hover:bg-white/10 transition-all hover:translate-x-1">
+                                    <div className="w-9 h-9 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl royal-gradient-gold flex items-center justify-center text-black font-black flex-shrink-0 shadow-lg text-[10px] sm:text-base">
+                                      +{record.points}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[11px] sm:text-sm font-black text-white truncate uppercase tracking-tight group-hover:text-royal-gold transition-colors">{record.description}</p>
+                                      <p className="text-[8px] sm:text-[10px] text-slate-500 font-black uppercase tracking-widest mt-0.5 sm:mt-1">Awarded at {safeFormat(record.createdAt, "hh:mm a")}</p>
+                                    </div>
+                                    {isAdmin && (
+                                      <button
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          if (confirm("Delete this point record?")) {
+                                            await fetch(`/api/points/${record.id}`, { method: "DELETE" });
+                                            fetchData();
+                                          }
+                                        }}
+                                        className="opacity-0 group-hover:opacity-100 p-2 text-red-400/60 hover:text-red-400 transition-all"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[11px] sm:text-sm font-black text-white truncate uppercase tracking-tight group-hover:text-royal-gold transition-colors">{record.description}</p>
-                              <p className="text-[8px] sm:text-[10px] text-slate-500 font-black uppercase tracking-widest mt-0.5 sm:mt-1">{format(parseISO(record.date), "MMMM dd, yyyy")}</p>
-                            </div>
-                            {isAdmin && (
-                              <button
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (confirm("Delete this point record?")) {
-                                    await fetch(`/api/points/${record.id}`, { method: "DELETE" });
-                                    fetchData();
-                                  }
-                                }}
-                                className="opacity-0 group-hover:opacity-100 p-2 text-red-400/60 hover:text-red-400 transition-all"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                        ))
+                          ));
+                        })()
                       ) : (
                         <div className="h-full flex flex-col items-center justify-center text-slate-700 space-y-6">
                           <div className="w-20 h-20 rounded-3xl bg-white/5 flex items-center justify-center border border-white/10">
