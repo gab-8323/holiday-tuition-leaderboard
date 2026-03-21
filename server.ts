@@ -280,7 +280,7 @@ async function startServer() {
         .from("points")
         .insert([{
           student_id: studentId,
-          points: parseInt(points),
+          points: parseFloat(points),
           description,
           date: date || new Date().toISOString()
         }])
@@ -323,7 +323,7 @@ async function startServer() {
         .filter((p: any) => p.points > 0)
         .map((p: any) => ({
           student_id: p.studentId,
-          points: parseInt(p.points),
+          points: parseFloat(p.points),
           description: p.description,
           date: p.date || new Date().toISOString()
         }));

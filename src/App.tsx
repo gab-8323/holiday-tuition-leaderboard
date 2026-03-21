@@ -1690,6 +1690,7 @@ function App() {
                     <div className="w-24">
                       <input
                         type="number"
+                        step="any"
                         placeholder="0"
                         value={bulkPoints[student.id] || ""}
                         onChange={(e) => setBulkPoints(prev => ({ ...prev, [student.id]: e.target.value }))}
@@ -1707,10 +1708,10 @@ function App() {
                 <button
                   onClick={async () => {
                     const payload = Object.entries(bulkPoints)
-                      .filter(([_, points]) => points && parseInt(points as string) !== 0)
+                      .filter(([_, points]) => points && parseFloat(points as string) !== 0)
                       .map(([studentId, points]) => ({
                         studentId,
-                        points: parseInt(points as string),
+                        points: parseFloat(points as string),
                         description: bulkCategory,
                         date: bulkDate
                       }));
@@ -1873,7 +1874,7 @@ function App() {
                 const formData = new FormData(e.currentTarget);
                 const payload = {
                   studentId: showAddPoints,
-                  points: parseInt((formData.get("points") || "0") as string),
+                  points: parseFloat((formData.get("points") || "0") as string),
                   description: isAddingNewCategorySingle ? singleCategory : (formData.get("description") as string),
                   date: formData.get("date") as string
                 };
@@ -1892,6 +1893,7 @@ function App() {
                   <input
                     name="points"
                     type="number"
+                    step="any"
                     required
                     placeholder="e.g. 50"
                     className="w-full px-8 py-6 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black text-4xl text-center placeholder:text-slate-800"
