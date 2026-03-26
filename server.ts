@@ -320,7 +320,7 @@ async function startServer() {
     try {
       const client = getSupabase();
       const addedPoints = newPoints
-        .filter((p: any) => p.points > 0)
+        .filter((p: any) => p.points !== 0)
         .map((p: any) => ({
           student_id: p.studentId,
           points: parseFloat(p.points),

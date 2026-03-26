@@ -27,8 +27,10 @@ import {
   Crown,
   Sparkles,
   Zap,
-  Image as ImageIcon,
-  Camera
+  ImageIcon,
+  Camera,
+  Gavel,
+  Coins
 } from "lucide-react";
 import {
   BarChart,
@@ -147,7 +149,7 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [showLogin, setShowLogin] = useState(false);
-  const [activeTab, setActiveTab] = useState<"total" | "daily" | "admin" | "analytics" | "gallery">("total");
+  const [activeTab, setActiveTab] = useState<"total" | "daily" | "admin" | "analytics" | "gallery" | "tender">("total");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [showAddStudent, setShowAddStudent] = useState(false);
@@ -172,6 +174,16 @@ function App() {
   const [lightboxScale, setLightboxScale] = useState(1);
   const [initialPinchDistance, setInitialPinchDistance] = useState<number | null>(null);
   const [initialPinchScale, setInitialPinchScale] = useState(1);
+
+  // Tender States
+  const [tenderBids, setTenderBids] = useState<{ studentId: string; points: number }[]>([]);
+  const [tenderPhase, setTenderPhase] = useState<'bidding' | 'reveal' | 'action'>('bidding');
+  const [currentBidderId, setCurrentBidderId] = useState<string>("");
+  const [currentBidPoints, setCurrentBidPoints] = useState<string>("");
+  const [activeBidderId, setActiveBidderId] = useState<string | null>(null);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetPassword, setResetPassword] = useState("");
+  const [showCelebration, setShowCelebration] = useState<{ studentName: string; points: number } | null>(null);
 
   const handlePinchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
@@ -703,7 +715,10 @@ function App() {
             { id: "daily", label: "DAILY STARS", icon: Sparkles },
             { id: "gallery", label: "GALLERY", icon: ImageIcon },
             { id: "analytics", label: "INSIGHTS", icon: BarChart3 },
-            ...(isAdmin ? [{ id: "admin", label: "ROSTER", icon: Users }] : [])
+            ...(isAdmin ? [
+              { id: "tender", label: "TENDER", icon: Gavel },
+              { id: "admin", label: "ROSTER", icon: Users }
+            ] : [])
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1370,6 +1385,508 @@ function App() {
                   </div>
                   <p className="text-slate-500 font-black text-2xl uppercase tracking-[0.3em]">The gallery is currently empty</p>
                 </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "tender" && isAdmin && (
+            <div className="space-y-12">
+              {/* Tender Header */}
+              <div className="flex flex-col items-center text-center space-y-3 sm:space-y-4">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl sm:rounded-3xl bg-royal-gold/10 flex items-center justify-center border border-royal-gold/20 shadow-[0_0_40px_rgba(255,215,0,0.1)]">
+                  <Gavel className="w-8 h-8 sm:w-10 sm:h-10 text-royal-gold" />
+                </div>
+                <h2 className="text-3xl sm:text-4xl font-black text-white tracking-tighter uppercase">Royal Tender</h2>
+                <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.2em] sm:tracking-[0.3em]">Question Bidding Activity</p>
+              </div>
+
+              {/* Phase 1: Bidding */}
+              {tenderPhase === 'bidding' && (
+                <div className="space-y-12">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
+                    {data.students.map((student) => {
+                      const hasBidded = tenderBids.some(b => b.studentId === student.id);
+                      return (
+                        <motion.button
+                          key={student.id}
+                          whileHover={!hasBidded ? { scale: 1.05 } : {}}
+                          whileTap={!hasBidded ? { scale: 0.95 } : {}}
+                          onClick={() => !hasBidded && setActiveBidderId(student.id)}
+                          disabled={hasBidded}
+                          className={cn(
+                            "relative group flex flex-col items-center p-4 rounded-[2rem] border transition-all duration-500",
+                            hasBidded
+                              ? "bg-white/5 border-white/5 opacity-30 grayscale"
+                              : "bg-white/5 border-white/10 hover:border-royal-gold/50 hover:bg-white/10 shadow-xl"
+                          )}
+                        >
+                          <div className="relative w-full aspect-square rounded-2xl overflow-hidden mb-4 border border-white/10">
+                            {student.photo ? (
+                              <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-700">
+                                <Users className="w-8 h-8" />
+                              </div>
+                            )}
+                            {hasBidded && (
+                              <div className="absolute inset-0 bg-slate-950/60 flex items-center justify-center">
+                                <Lock className="w-6 h-6 text-white/50" />
+                              </div>
+                            )}
+                          </div>
+                          <span className={cn(
+                            "font-black text-[10px] sm:text-xs uppercase tracking-widest text-center",
+                            hasBidded ? "text-slate-600" : "text-white group-hover:text-royal-gold"
+                          )}>
+                            {student.name}
+                          </span>
+                        </motion.button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-col items-center gap-8 pt-8 border-t border-white/5">
+                    <div className="flex flex-col items-center gap-2">
+                      <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">
+                        {tenderBids.length} of {data.students.length} Bids Collected
+                      </p>
+                      <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
+                        <motion.div
+                          className="h-full royal-gradient-gold"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(tenderBids.length / data.students.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto px-4 sm:px-0">
+                      <button
+                        onClick={() => setShowResetConfirm(true)}
+                        className="w-full sm:w-auto px-8 py-4 bg-white/5 border border-white/10 rounded-2xl text-slate-500 font-black text-[10px] uppercase tracking-widest hover:text-red-400 transition-all flex items-center justify-center gap-2 order-2 sm:order-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Reset Round
+                      </button>
+                      <button
+                        onClick={() => setTenderPhase('reveal')}
+                        disabled={tenderBids.length === 0}
+                        className="w-full sm:w-auto px-12 py-4 royal-gradient-gold rounded-2xl text-black font-black text-sm uppercase tracking-widest shadow-2xl hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale order-1 sm:order-2"
+                      >
+                        Reveal Results
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Bid Entry Modal */}
+              <AnimatePresence>
+                {activeBidderId && (
+                  <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl"
+                      onClick={() => setActiveBidderId(null)}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                      className="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-[2.5rem] sm:rounded-[3rem] p-6 sm:p-12 shadow-3xl overflow-hidden"
+                    >
+                      <div className="absolute top-0 left-0 w-full h-1 royal-gradient-gold opacity-50" />
+
+                      <div className="flex flex-col items-center text-center space-y-8">
+                        {(() => {
+                          const student = data.students.find(s => s.id === activeBidderId);
+                          return (
+                            <>
+                              <div className="space-y-4">
+                                <div className="w-24 h-24 rounded-3xl border-2 border-royal-gold/30 overflow-hidden mx-auto">
+                                  {student?.photo ? (
+                                    <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center bg-slate-800 text-slate-600">
+                                      <Users className="w-10 h-10" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div>
+                                  <h3 className="text-2xl font-black text-white uppercase tracking-tight">{student?.name}</h3>
+                                  <p className="text-royal-gold text-[10px] font-black uppercase tracking-[0.3em]">Place your secret bid</p>
+                                </div>
+                              </div>
+
+                              <div className="w-full space-y-4 sm:space-y-6">
+                                <input
+                                  autoFocus
+                                  type="number"
+                                  step="any"
+                                  placeholder="0.00"
+                                  value={currentBidPoints}
+                                  onChange={(e) => setCurrentBidPoints(e.target.value)}
+                                  className="w-full px-4 sm:px-8 py-4 sm:py-6 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black text-3xl sm:text-5xl text-center placeholder:text-slate-800"
+                                />
+                                <div className="grid grid-cols-2 gap-4">
+                                  <button
+                                    onClick={() => {
+                                      setActiveBidderId(null);
+                                      setCurrentBidPoints("");
+                                    }}
+                                    className="py-4 bg-white/5 border border-white/10 rounded-2xl font-black text-slate-500 text-xs uppercase tracking-widest hover:text-white transition-all"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (!activeBidderId || !currentBidPoints) return;
+                                      const points = parseFloat(currentBidPoints);
+                                      if (isNaN(points)) return;
+
+                                      setTenderBids(prev => [...prev.filter(b => b.studentId !== activeBidderId), { studentId: activeBidderId, points }]);
+                                      setActiveBidderId(null);
+                                      setCurrentBidPoints("");
+                                    }}
+                                    className="py-4 royal-gradient-gold rounded-2xl font-black text-black text-xs uppercase tracking-widest shadow-xl hover:scale-105 transition-all"
+                                  >
+                                    Submit Bid
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+
+              {/* Secure Reset Modal */}
+              <AnimatePresence>
+                {showResetConfirm && (
+                  <div className="fixed inset-0 z-[110] flex items-center justify-center px-4">
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute inset-0 bg-slate-950/95 backdrop-blur-2xl"
+                      onClick={() => {
+                        setShowResetConfirm(false);
+                        setResetPassword("");
+                      }}
+                    />
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.9 }}
+                      className="relative w-full max-w-sm bg-slate-900 border border-red-500/20 rounded-[2.5rem] sm:rounded-[3rem] p-6 sm:p-10 shadow-3xl text-center space-y-6 sm:space-y-8"
+                    >
+                      <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mx-auto text-red-500">
+                        <Lock className="w-8 h-8" />
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-xl font-black text-white uppercase tracking-tight">Security Check</h3>
+                        <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">Enter Admin Password to Reset Round</p>
+                      </div>
+                      <input
+                        autoFocus
+                        type="password"
+                        placeholder="••••••••"
+                        value={resetPassword}
+                        onChange={(e) => setResetPassword(e.target.value)}
+                        className="w-full px-6 py-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-red-500 outline-none text-white font-black text-center tracking-[0.5em]"
+                      />
+                      <div className="flex gap-4">
+                        <button
+                          onClick={() => {
+                            setShowResetConfirm(false);
+                            setResetPassword("");
+                          }}
+                          className="flex-1 py-4 bg-white/5 border border-white/10 rounded-2xl font-black text-slate-500 text-[10px] uppercase tracking-widest"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch("/api/login", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ password: resetPassword }),
+                              });
+
+                              if (res.ok) {
+                                setTenderBids([]);
+                                setShowResetConfirm(false);
+                                setResetPassword("");
+                              } else {
+                                alert("Incorrect Password");
+                              }
+                            } catch (err) {
+                              alert("Verification failed");
+                            }
+                          }}
+                          className="flex-1 py-4 bg-red-500 rounded-2xl font-black text-white text-[10px] uppercase tracking-widest shadow-xl shadow-red-500/20"
+                        >
+                          Confirm Reset
+                        </button>
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+
+              {/* Celebration Animation */}
+              <AnimatePresence>
+                {showCelebration && (
+                  <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden pointer-events-none">
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+                    />
+
+                    {/* Sparkles/Particles */}
+                    {[...Array(20)].map((_, i) => (
+                      <motion.div
+                        key={i}
+                        initial={{
+                          x: 0,
+                          y: 0,
+                          scale: 0,
+                          rotate: 0
+                        }}
+                        animate={{
+                          x: (Math.random() - 0.5) * 1000,
+                          y: (Math.random() - 0.5) * 1000,
+                          scale: [0, 1.5, 0],
+                          rotate: Math.random() * 360
+                        }}
+                        transition={{
+                          duration: 2.5,
+                          ease: "easeOut",
+                          delay: Math.random() * 0.5
+                        }}
+                        className="absolute"
+                      >
+                        <Sparkles className="w-8 h-8 text-royal-gold" />
+                      </motion.div>
+                    ))}
+
+                    <motion.div
+                      initial={{ scale: 0, rotate: -20 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      exit={{ scale: 0, opacity: 0 }}
+                      className="relative bg-white/10 backdrop-blur-3xl border border-white/20 rounded-[2.5rem] sm:rounded-[4rem] p-8 sm:p-20 shadow-[0_0_100px_rgba(255,215,0,0.3)] text-center space-y-6 sm:space-y-8 mx-4"
+                    >
+                      <motion.div
+                        animate={{
+                          scale: [1, 1.2, 1],
+                          rotate: [0, 5, -5, 0]
+                        }}
+                        transition={{ repeat: Infinity, duration: 2 }}
+                        className="w-24 h-24 sm:w-48 sm:h-48 rounded-3xl sm:rounded-[3rem] bg-royal-gold flex items-center justify-center mx-auto shadow-2xl"
+                      >
+                        <Crown className="w-12 h-12 sm:w-24 sm:h-24 text-black" />
+                      </motion.div>
+
+                      <div className="space-y-2 sm:space-y-4">
+                        <h2 className="text-3xl sm:text-6xl font-black text-white uppercase tracking-tighter">
+                          {showCelebration.studentName}
+                        </h2>
+                        <div className="flex items-center justify-center gap-2 sm:gap-4">
+                          <Coins className="w-6 h-6 sm:w-8 h-8 text-royal-gold" />
+                          <span className="text-4xl sm:text-7xl font-black text-royal-gold font-mono">
+                            +{showCelebration.points}
+                          </span>
+                        </div>
+                        <p className="text-royal-gold font-black text-[10px] sm:text-lg uppercase tracking-[0.3em] sm:tracking-[0.5em] animate-pulse">
+                          ROYAL VICTORY
+                        </p>
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+
+              {/* Phase 2: Reveal */}
+              {tenderPhase === 'reveal' && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="max-w-2xl mx-auto space-y-8"
+                >
+                  <div className="bg-white/5 backdrop-blur-2xl rounded-[3rem] border border-white/10 shadow-3xl overflow-hidden">
+                    <div className="p-8 border-b border-white/5 bg-white/5">
+                      <h3 className="text-xl font-black text-white text-center uppercase tracking-widest">Bidding Results</h3>
+                    </div>
+                    <div className="divide-y divide-white/5">
+                      {[...tenderBids].sort((a, b) => b.points - a.points).map((bid, index) => {
+                        const student = data.students.find(s => s.id === bid.studentId);
+                        return (
+                          <div key={bid.studentId} className={cn(
+                            "flex items-center justify-between p-6 transition-all",
+                            index === 0 ? "bg-royal-gold/10" : ""
+                          )}>
+                            <div className="flex items-center gap-4">
+                              <div className={cn(
+                                "w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm",
+                                index === 0 ? "royal-gradient-gold text-black" : "bg-white/5 text-slate-400"
+                              )}>
+                                {index + 1}
+                              </div>
+                              <div>
+                                <p className="font-black text-white uppercase tracking-tight">{student?.name}</p>
+                                {index === 0 && <p className="text-[10px] font-black text-royal-gold uppercase tracking-widest">Top Bidder</p>}
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className={cn(
+                                "text-2xl font-black font-mono",
+                                index === 0 ? "text-royal-gold" : "text-white"
+                              )}>{bid.points}</p>
+                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Points Bid</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row justify-center gap-4">
+                    <button
+                      onClick={() => setTenderPhase('bidding')}
+                      className="w-full sm:w-auto px-8 py-4 bg-white/5 border border-white/10 rounded-2xl text-slate-400 font-black text-sm uppercase tracking-widest hover:text-white transition-all order-2 sm:order-1"
+                    >
+                      Back to Bidding
+                    </button>
+                    <button
+                      onClick={() => setTenderPhase('action')}
+                      className="w-full sm:w-auto px-12 py-4 royal-gradient-gold rounded-2xl text-black font-black text-sm uppercase tracking-widest shadow-2xl hover:scale-105 transition-all order-1 sm:order-2"
+                    >
+                      Process Tender
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* Phase 3: Action */}
+              {tenderPhase === 'action' && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="max-w-xl mx-auto space-y-12 text-center"
+                >
+                  <div className="space-y-6">
+                    <p className="text-slate-500 font-black uppercase tracking-[0.4em]">Highest Bidder</p>
+                    {(() => {
+                      const topBid = [...tenderBids].sort((a, b) => b.points - a.points)[0];
+                      const student = data.students.find(s => s.id === topBid.studentId);
+                      return (
+                        <div className="flex flex-col items-center space-y-4 sm:space-y-6">
+                          <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl sm:rounded-[2.5rem] border-4 border-royal-gold overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.2)]">
+                            {student?.photo ? (
+                              <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-700">
+                                <Users className="w-12 h-12 sm:w-16 sm:h-16" />
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <h3 className="text-3xl sm:text-4xl font-black text-white uppercase tracking-tighter">{student?.name}</h3>
+                            <div className="flex items-center justify-center gap-2 sm:gap-3 mt-1 sm:mt-2">
+                              <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-royal-gold" />
+                              <span className="text-2xl sm:text-3xl font-black text-royal-gold font-mono">{topBid.points}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-6">
+                    <button
+                      onClick={async () => {
+                        const sortedBids = [...tenderBids].sort((a, b) => b.points - a.points);
+                        const topBid = sortedBids[0];
+                        const others = sortedBids.slice(1);
+                        const student = data.students.find(s => s.id === topBid.studentId);
+
+                        // Trigger Animation
+                        setShowCelebration({ studentName: student?.name || "Student", points: topBid.points });
+
+                        const payload = [
+                          { studentId: topBid.studentId, points: topBid.points, description: "Tender (Correct)", date: new Date().toISOString() },
+                          ...others.map(b => ({ studentId: b.studentId, points: -b.points, description: "Tender (Bid Cost)", date: new Date().toISOString() }))
+                        ];
+
+                        await fetch("/api/points/bulk", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ points: payload })
+                        });
+
+                        // Wait for animation to finish
+                        setTimeout(() => {
+                          setShowCelebration(null);
+                          setTenderBids([]);
+                          setTenderPhase('bidding');
+                          fetchData();
+                        }, 3000);
+                      }}
+                      className="group relative overflow-hidden py-6 sm:py-10 rounded-[2rem] sm:rounded-[2.5rem] border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all"
+                    >
+                      <div className="relative z-10 flex flex-col items-center gap-2 sm:gap-3">
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+                          <Sparkles className="w-6 h-6 sm:w-8 sm:h-8" />
+                        </div>
+                        <span className="font-black text-emerald-500 text-xs sm:text-base uppercase tracking-[0.2em]">Correct</span>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        const sortedBids = [...tenderBids].sort((a, b) => b.points - a.points);
+                        const payload = sortedBids.map(b => ({
+                          studentId: b.studentId,
+                          points: -b.points,
+                          description: "Tender (Wrong/Cost)",
+                          date: new Date().toISOString()
+                        }));
+
+                        await fetch("/api/points/bulk", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ points: payload })
+                        });
+
+                        setTenderBids([]);
+                        setTenderPhase('bidding');
+                        fetchData();
+                      }}
+                      className="group relative overflow-hidden py-6 sm:py-10 rounded-[2rem] sm:rounded-[2.5rem] border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all"
+                    >
+                      <div className="relative z-10 flex flex-col items-center gap-2 sm:gap-3">
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition-transform">
+                          <X className="w-6 h-6 sm:w-8 sm:h-8" />
+                        </div>
+                        <span className="font-black text-red-500 text-xs sm:text-base uppercase tracking-[0.2em]">Wrong</span>
+                      </div>
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={() => setTenderPhase('reveal')}
+                    className="text-slate-500 hover:text-white font-black text-[10px] uppercase tracking-widest transition-colors"
+                  >
+                    Cancel and go back
+                  </button>
+                </motion.div>
               )}
             </div>
           )}
