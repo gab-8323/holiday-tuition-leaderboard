@@ -176,14 +176,18 @@ function App() {
   const [initialPinchScale, setInitialPinchScale] = useState(1);
 
   // Tender States
-  const [tenderBids, setTenderBids] = useState<{ studentId: string; points: number }[]>([]);
-  const [tenderPhase, setTenderPhase] = useState<'bidding' | 'reveal' | 'action'>('bidding');
-  const [currentBidderId, setCurrentBidderId] = useState<string>("");
+  const [tenderBids, setTenderBids] = useState<{ studentId?: string; groupId?: string; points: number }[]>([]);
+  const [tenderPhase, setTenderPhase] = useState<'setup' | 'bidding' | 'reveal' | 'action' | 'settlement'>('setup');
+  const [tenderMode, setTenderMode] = useState<'individual' | 'group'>('individual');
+  const [tenderGroups, setTenderGroups] = useState<{ id: string; name: string; studentIds: string[] }[]>([]);
+  const [tenderSessionBalances, setTenderSessionBalances] = useState<Record<string, number>>({}); // id -> points
+  const [startingPoints, setStartingPoints] = useState<number>(100);
+  const [activeBidderId, setActiveBidderId] = useState<string | null>(null); // studentId or groupId
   const [currentBidPoints, setCurrentBidPoints] = useState<string>("");
-  const [activeBidderId, setActiveBidderId] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [resetPassword, setResetPassword] = useState("");
-  const [showCelebration, setShowCelebration] = useState<{ studentName: string; points: number } | null>(null);
+  const [showCelebration, setShowCelebration] = useState<{ name: string; points: number } | null>(null);
+  const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; studentIds: string[] } | null>(null);
 
   const handlePinchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
@@ -1400,18 +1404,132 @@ function App() {
                 <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.2em] sm:tracking-[0.3em]">Question Bidding Activity</p>
               </div>
 
+              {/* Phase 0: Setup */}
+              {tenderPhase === 'setup' && (
+                <div className="max-w-4xl mx-auto space-y-12">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    {/* Mode Selection */}
+                    <div className="bg-white/5 p-8 rounded-[3rem] border border-white/10 space-y-6">
+                      <h3 className="text-xl font-black text-white uppercase tracking-widest">Activity Mode</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <button
+                          onClick={() => setTenderMode('individual')}
+                          className={cn(
+                            "py-6 rounded-2xl border transition-all flex flex-col items-center gap-3",
+                            tenderMode === 'individual'
+                              ? "bg-royal-gold/20 border-royal-gold text-royal-gold"
+                              : "bg-white/5 border-white/10 text-slate-500 hover:bg-white/10"
+                          )}
+                        >
+                          <Users className="w-8 h-8" />
+                          <span className="font-black text-xs uppercase tracking-widest">Individual</span>
+                        </button>
+                        <button
+                          onClick={() => setTenderMode('group')}
+                          className={cn(
+                            "py-6 rounded-2xl border transition-all flex flex-col items-center gap-3",
+                            tenderMode === 'group'
+                              ? "bg-royal-gold/20 border-royal-gold text-royal-gold"
+                              : "bg-white/5 border-white/10 text-slate-500 hover:bg-white/10"
+                          )}
+                        >
+                          <UserPlus className="w-8 h-8" />
+                          <span className="font-black text-xs uppercase tracking-widest">Group</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Starting Points */}
+                    <div className="bg-white/5 p-8 rounded-[3rem] border border-white/10 space-y-6">
+                      <h3 className="text-xl font-black text-white uppercase tracking-widest">Starting Points</h3>
+                      <div className="flex items-center gap-6">
+                        <input
+                          type="number"
+                          value={startingPoints}
+                          onChange={(e) => setStartingPoints(parseInt(e.target.value) || 0)}
+                          className="w-full px-8 py-6 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black text-2xl sm:text-4xl text-center"
+                        />
+                      </div>
+                      <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest text-center">Initial balance for each player/team</p>
+                    </div>
+                  </div>
+
+                  {/* Group Management (only if group mode) */}
+                  {tenderMode === 'group' && (
+                    <div className="bg-white/5 p-8 rounded-[3rem] border border-white/10 space-y-8">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-xl font-black text-white uppercase tracking-widest">Manage Groups</h3>
+                        <button
+                          onClick={() => setEditingGroup({ id: Math.random().toString(36).substr(2, 9), name: `Team ${tenderGroups.length + 1}`, studentIds: [] })}
+                          className="px-6 py-3 royal-gradient-gold rounded-xl text-black font-black text-xs uppercase tracking-widest flex items-center gap-2"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Add Team
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {tenderGroups.map(group => (
+                          <div key={group.id} className="bg-white/5 border border-white/10 rounded-2xl p-6 space-y-4">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-black text-white uppercase tracking-tight">{group.name}</h4>
+                              <div className="flex gap-2">
+                                <button onClick={() => setEditingGroup(group)} className="p-2 text-slate-500 hover:text-white"><Edit2 className="w-4 h-4" /></button>
+                                <button onClick={() => setTenderGroups(prev => prev.filter(g => g.id !== group.id))} className="p-2 text-slate-500 hover:text-red-400"><Trash2 className="w-4 h-4" /></button>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {group.studentIds.map(sid => {
+                                const student = data.students.find(s => s.id === sid);
+                                return (
+                                  <span key={sid} className="px-3 py-1 bg-white/5 rounded-full text-[10px] text-slate-400 font-bold">
+                                    {student?.name}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-center pt-8">
+                    <button
+                      onClick={() => {
+                        const balances: Record<string, number> = {};
+                        if (tenderMode === 'individual') {
+                          data.students.forEach(s => balances[s.id] = startingPoints);
+                        } else {
+                          tenderGroups.forEach(g => balances[g.id] = startingPoints);
+                        }
+                        setTenderSessionBalances(balances);
+                        setTenderPhase('bidding');
+                      }}
+                      disabled={tenderMode === 'group' && tenderGroups.length === 0}
+                      className="px-16 py-6 royal-gradient-gold rounded-[2rem] text-black font-black text-xl uppercase tracking-[0.2em] shadow-2xl hover:scale-105 transition-all disabled:opacity-50"
+                    >
+                      Start Activity
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Phase 1: Bidding */}
               {tenderPhase === 'bidding' && (
                 <div className="space-y-12">
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
-                    {data.students.map((student) => {
-                      const hasBidded = tenderBids.some(b => b.studentId === student.id);
+                    {(tenderMode === 'individual' ? data.students : tenderGroups).map((item) => {
+                      const id = item.id;
+                      const hasBidded = tenderBids.some(b => (tenderMode === 'individual' ? b.studentId : b.groupId) === id);
+                      const balance = tenderSessionBalances[id] || 0;
+
                       return (
                         <motion.button
-                          key={student.id}
+                          key={id}
                           whileHover={!hasBidded ? { scale: 1.05 } : {}}
                           whileTap={!hasBidded ? { scale: 0.95 } : {}}
-                          onClick={() => !hasBidded && setActiveBidderId(student.id)}
+                          onClick={() => !hasBidded && setActiveBidderId(id)}
                           disabled={hasBidded}
                           className={cn(
                             "relative group flex flex-col items-center p-4 rounded-[2rem] border transition-all duration-500",
@@ -1421,11 +1539,17 @@ function App() {
                           )}
                         >
                           <div className="relative w-full aspect-square rounded-2xl overflow-hidden mb-4 border border-white/10">
-                            {student.photo ? (
-                              <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            {tenderMode === 'individual' ? (
+                              (item as Student).photo ? (
+                                <img src={(item as Student).photo!} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-700">
+                                  <Users className="w-8 h-8" />
+                                </div>
+                              )
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-700">
-                                <Users className="w-8 h-8" />
+                              <div className="w-full h-full flex items-center justify-center bg-royal-gold/10 text-royal-gold">
+                                <UserPlus className="w-12 h-12" />
                               </div>
                             )}
                             {hasBidded && (
@@ -1433,12 +1557,15 @@ function App() {
                                 <Lock className="w-6 h-6 text-white/50" />
                               </div>
                             )}
+                            <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 backdrop-blur-md rounded-lg border border-white/10">
+                              <span className="text-[10px] font-mono font-black text-royal-gold">{balance}</span>
+                            </div>
                           </div>
                           <span className={cn(
                             "font-black text-[10px] sm:text-xs uppercase tracking-widest text-center",
                             hasBidded ? "text-slate-600" : "text-white group-hover:text-royal-gold"
                           )}>
-                            {student.name}
+                            {item.name}
                           </span>
                         </motion.button>
                       );
@@ -1448,21 +1575,21 @@ function App() {
                   <div className="flex flex-col items-center gap-8 pt-8 border-t border-white/5">
                     <div className="flex flex-col items-center gap-2">
                       <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em]">
-                        {tenderBids.length} of {data.students.length} Bids Collected
+                        {tenderBids.length} of {tenderMode === 'individual' ? data.students.length : tenderGroups.length} Bids Collected
                       </p>
                       <div className="w-48 h-1 bg-white/5 rounded-full overflow-hidden">
                         <motion.div
                           className="h-full royal-gradient-gold"
                           initial={{ width: 0 }}
-                          animate={{ width: `${(tenderBids.length / data.students.length) * 100}%` }}
+                          animate={{ width: `${(tenderBids.length / (tenderMode === 'individual' ? data.students.length : tenderGroups.length)) * 100}%` }}
                         />
                       </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto px-4 sm:px-0">
+                    <div className="flex flex-wrap justify-center gap-4 w-full px-4 sm:px-0">
                       <button
                         onClick={() => setShowResetConfirm(true)}
-                        className="w-full sm:w-auto px-8 py-4 bg-white/5 border border-white/10 rounded-2xl text-slate-500 font-black text-[10px] uppercase tracking-widest hover:text-red-400 transition-all flex items-center justify-center gap-2 order-2 sm:order-1"
+                        className="px-8 py-4 bg-white/5 border border-white/10 rounded-2xl text-slate-500 font-black text-[10px] uppercase tracking-widest hover:text-red-400 transition-all flex items-center justify-center gap-2"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         Reset Round
@@ -1470,9 +1597,15 @@ function App() {
                       <button
                         onClick={() => setTenderPhase('reveal')}
                         disabled={tenderBids.length === 0}
-                        className="w-full sm:w-auto px-12 py-4 royal-gradient-gold rounded-2xl text-black font-black text-sm uppercase tracking-widest shadow-2xl hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale order-1 sm:order-2"
+                        className="px-12 py-4 royal-gradient-gold rounded-2xl text-black font-black text-sm uppercase tracking-widest shadow-2xl hover:scale-105 transition-all disabled:opacity-50 disabled:grayscale"
                       >
                         Reveal Results
+                      </button>
+                      <button
+                        onClick={() => setTenderPhase('settlement')}
+                        className="px-8 py-4 bg-white/5 border border-white/10 rounded-2xl text-royal-gold font-black text-[10px] uppercase tracking-widest hover:bg-royal-gold/10 transition-all"
+                      >
+                        Finish & Assign
                       </button>
                     </div>
                   </div>
@@ -1500,21 +1633,30 @@ function App() {
 
                       <div className="flex flex-col items-center text-center space-y-8">
                         {(() => {
-                          const student = data.students.find(s => s.id === activeBidderId);
+                          const item = tenderMode === 'individual'
+                            ? data.students.find(s => s.id === activeBidderId)
+                            : tenderGroups.find(g => g.id === activeBidderId);
+
                           return (
                             <>
                               <div className="space-y-4">
                                 <div className="w-24 h-24 rounded-3xl border-2 border-royal-gold/30 overflow-hidden mx-auto">
-                                  {student?.photo ? (
-                                    <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  {tenderMode === 'individual' ? (
+                                    (item as Student)?.photo ? (
+                                      <img src={(item as Student).photo!} alt={item?.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center bg-slate-800 text-slate-600">
+                                        <Users className="w-10 h-10" />
+                                      </div>
+                                    )
                                   ) : (
-                                    <div className="w-full h-full flex items-center justify-center bg-slate-800 text-slate-600">
-                                      <Users className="w-10 h-10" />
+                                    <div className="w-full h-full flex items-center justify-center bg-royal-gold/10 text-royal-gold">
+                                      <UserPlus className="w-12 h-12" />
                                     </div>
                                   )}
                                 </div>
                                 <div>
-                                  <h3 className="text-2xl font-black text-white uppercase tracking-tight">{student?.name}</h3>
+                                  <h3 className="text-2xl font-black text-white uppercase tracking-tight">{item?.name}</h3>
                                   <p className="text-royal-gold text-[10px] font-black uppercase tracking-[0.3em]">Place your secret bid</p>
                                 </div>
                               </div>
@@ -1545,7 +1687,10 @@ function App() {
                                       const points = parseFloat(currentBidPoints);
                                       if (isNaN(points)) return;
 
-                                      setTenderBids(prev => [...prev.filter(b => b.studentId !== activeBidderId), { studentId: activeBidderId, points }]);
+                                      setTenderBids(prev => [
+                                        ...prev.filter(b => (tenderMode === 'individual' ? b.studentId : b.groupId) !== activeBidderId),
+                                        tenderMode === 'individual' ? { studentId: activeBidderId, points } : { groupId: activeBidderId, points }
+                                      ]);
                                       setActiveBidderId(null);
                                       setCurrentBidPoints("");
                                     }}
@@ -1726,9 +1871,13 @@ function App() {
                     </div>
                     <div className="divide-y divide-white/5">
                       {[...tenderBids].sort((a, b) => b.points - a.points).map((bid, index) => {
-                        const student = data.students.find(s => s.id === bid.studentId);
+                        const id = tenderMode === 'individual' ? bid.studentId : bid.groupId;
+                        const item = tenderMode === 'individual'
+                          ? data.students.find(s => s.id === id)
+                          : tenderGroups.find(g => g.id === id);
+
                         return (
-                          <div key={bid.studentId} className={cn(
+                          <div key={id} className={cn(
                             "flex items-center justify-between p-6 transition-all",
                             index === 0 ? "bg-royal-gold/10" : ""
                           )}>
@@ -1740,7 +1889,7 @@ function App() {
                                 {index + 1}
                               </div>
                               <div>
-                                <p className="font-black text-white uppercase tracking-tight">{student?.name}</p>
+                                <p className="font-black text-white uppercase tracking-tight">{item?.name}</p>
                                 {index === 0 && <p className="text-[10px] font-black text-royal-gold uppercase tracking-widest">Top Bidder</p>}
                               </div>
                             </div>
@@ -1785,20 +1934,30 @@ function App() {
                     <p className="text-slate-500 font-black uppercase tracking-[0.4em]">Highest Bidder</p>
                     {(() => {
                       const topBid = [...tenderBids].sort((a, b) => b.points - a.points)[0];
-                      const student = data.students.find(s => s.id === topBid.studentId);
+                      const id = tenderMode === 'individual' ? topBid.studentId : topBid.groupId;
+                      const item = tenderMode === 'individual'
+                        ? data.students.find(s => s.id === id)
+                        : tenderGroups.find(g => g.id === id);
+
                       return (
                         <div className="flex flex-col items-center space-y-4 sm:space-y-6">
                           <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl sm:rounded-[2.5rem] border-4 border-royal-gold overflow-hidden shadow-[0_0_50px_rgba(255,215,0,0.2)]">
-                            {student?.photo ? (
-                              <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            {tenderMode === 'individual' ? (
+                              (item as Student)?.photo ? (
+                                <img src={(item as Student).photo!} alt={item?.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-700">
+                                  <Users className="w-12 h-12 sm:w-16 sm:h-16" />
+                                </div>
+                              )
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-700">
-                                <Users className="w-12 h-12 sm:w-16 sm:h-16" />
+                              <div className="w-full h-full flex items-center justify-center bg-royal-gold/10 text-royal-gold">
+                                <UserPlus className="w-12 h-12 sm:w-16 sm:h-16" />
                               </div>
                             )}
                           </div>
                           <div>
-                            <h3 className="text-3xl sm:text-4xl font-black text-white uppercase tracking-tighter">{student?.name}</h3>
+                            <h3 className="text-3xl sm:text-4xl font-black text-white uppercase tracking-tighter">{item?.name}</h3>
                             <div className="flex items-center justify-center gap-2 sm:gap-3 mt-1 sm:mt-2">
                               <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-royal-gold" />
                               <span className="text-2xl sm:text-3xl font-black text-royal-gold font-mono">{topBid.points}</span>
@@ -1809,73 +1968,71 @@ function App() {
                     })()}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                     <button
-                      onClick={async () => {
+                      onClick={() => {
                         const sortedBids = [...tenderBids].sort((a, b) => b.points - a.points);
                         const topBid = sortedBids[0];
                         const others = sortedBids.slice(1);
-                        const student = data.students.find(s => s.id === topBid.studentId);
+
+                        const topId = tenderMode === 'individual' ? topBid.studentId : topBid.groupId;
+                        const item = tenderMode === 'individual'
+                          ? data.students.find(s => s.id === topId)
+                          : tenderGroups.find(g => g.id === topId);
 
                         // Trigger Animation
-                        setShowCelebration({ studentName: student?.name || "Student", points: topBid.points });
+                        setShowCelebration({ studentName: item?.name || "Winner", points: topBid.points });
 
-                        const payload = [
-                          { studentId: topBid.studentId, points: topBid.points, description: "Tender (Correct)", date: new Date().toISOString() },
-                          ...others.map(b => ({ studentId: b.studentId, points: -b.points, description: "Tender (Bid Cost)", date: new Date().toISOString() }))
-                        ];
+                        // Update Session Balances
+                        const newBalances = { ...tenderSessionBalances };
+                        if (topId) newBalances[topId] += topBid.points;
 
-                        await fetch("/api/points/bulk", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ points: payload })
+                        others.forEach(b => {
+                          const id = tenderMode === 'individual' ? b.studentId : b.groupId;
+                          if (id) newBalances[id] -= b.points;
                         });
+
+                        setTenderSessionBalances(newBalances);
 
                         // Wait for animation to finish
                         setTimeout(() => {
                           setShowCelebration(null);
                           setTenderBids([]);
                           setTenderPhase('bidding');
-                          fetchData();
                         }, 3000);
                       }}
-                      className="group relative overflow-hidden py-6 sm:py-10 rounded-[2rem] sm:rounded-[2.5rem] border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all"
+                      className="group relative overflow-hidden py-4 sm:py-10 rounded-[2rem] sm:rounded-[2.5rem] border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 transition-all"
                     >
-                      <div className="relative z-10 flex flex-col items-center gap-2 sm:gap-3">
-                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
-                          <Sparkles className="w-6 h-6 sm:w-8 sm:h-8" />
+                      <div className="relative z-10 flex flex-col items-center gap-1 sm:gap-3">
+                        <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-500 group-hover:scale-110 transition-transform">
+                          <Sparkles className="w-5 h-5 sm:w-8 sm:h-8" />
                         </div>
-                        <span className="font-black text-emerald-500 text-xs sm:text-base uppercase tracking-[0.2em]">Correct</span>
+                        <span className="font-black text-emerald-500 text-[10px] sm:text-base uppercase tracking-[0.2em]">Correct</span>
                       </div>
                     </button>
 
                     <button
-                      onClick={async () => {
+                      onClick={() => {
                         const sortedBids = [...tenderBids].sort((a, b) => b.points - a.points);
-                        const payload = sortedBids.map(b => ({
-                          studentId: b.studentId,
-                          points: -b.points,
-                          description: "Tender (Wrong/Cost)",
-                          date: new Date().toISOString()
-                        }));
 
-                        await fetch("/api/points/bulk", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ points: payload })
+                        // Update Session Balances (all bidders lose their bid)
+                        const newBalances = { ...tenderSessionBalances };
+                        sortedBids.forEach(b => {
+                          const id = tenderMode === 'individual' ? b.studentId : b.groupId;
+                          if (id) newBalances[id] -= b.points;
                         });
 
+                        setTenderSessionBalances(newBalances);
                         setTenderBids([]);
                         setTenderPhase('bidding');
-                        fetchData();
                       }}
-                      className="group relative overflow-hidden py-6 sm:py-10 rounded-[2rem] sm:rounded-[2.5rem] border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all"
+                      className="group relative overflow-hidden py-4 sm:py-10 rounded-[2rem] sm:rounded-[2.5rem] border border-red-500/20 bg-red-500/5 hover:bg-red-500/10 transition-all"
                     >
-                      <div className="relative z-10 flex flex-col items-center gap-2 sm:gap-3">
-                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition-transform">
-                          <X className="w-6 h-6 sm:w-8 sm:h-8" />
+                      <div className="relative z-10 flex flex-col items-center gap-1 sm:gap-3">
+                        <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-red-500/20 flex items-center justify-center text-red-500 group-hover:scale-110 transition-transform">
+                          <X className="w-5 h-5 sm:w-8 sm:h-8" />
                         </div>
-                        <span className="font-black text-red-500 text-xs sm:text-base uppercase tracking-[0.2em]">Wrong</span>
+                        <span className="font-black text-red-500 text-[10px] sm:text-base uppercase tracking-[0.2em]">Wrong</span>
                       </div>
                     </button>
                   </div>
@@ -1886,6 +2043,122 @@ function App() {
                   >
                     Cancel and go back
                   </button>
+                </motion.div>
+              )}
+
+              {/* Phase 4: Settlement */}
+              {tenderPhase === 'settlement' && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="max-w-4xl mx-auto space-y-8"
+                >
+                  <div className="bg-white/5 backdrop-blur-2xl rounded-[3rem] border border-white/10 shadow-3xl overflow-hidden">
+                    <div className="p-8 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                      <h3 className="text-xl font-black text-white uppercase tracking-widest">Final Settlement</h3>
+                      <div className="px-4 py-2 bg-royal-gold/10 rounded-xl border border-royal-gold/20">
+                        <span className="text-[10px] font-black text-royal-gold uppercase tracking-widest">Session End</span>
+                      </div>
+                    </div>
+
+                    <div className="p-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {(tenderMode === 'individual' ? data.students : tenderGroups).map((item) => {
+                        const balance = tenderSessionBalances[item.id] || 0;
+                        const isPositive = balance >= 0;
+
+                        return (
+                          <div key={item.id} className="bg-white/5 border border-white/10 rounded-2xl p-6 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="w-12 h-12 rounded-xl bg-slate-900 border border-white/10 overflow-hidden">
+                                {tenderMode === 'individual' ? (
+                                  (item as Student).photo ? (
+                                    <img src={(item as Student).photo!} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-slate-700">
+                                      <Users className="w-6 h-6" />
+                                    </div>
+                                  )
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-royal-gold/10 text-royal-gold">
+                                    <UserPlus className="w-6 h-6" />
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <p className="font-black text-white uppercase tracking-tight">{item.name}</p>
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Final Balance</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className={cn(
+                                "text-2xl font-black font-mono",
+                                isPositive ? "text-emerald-400" : "text-red-400"
+                              )}>
+                                {isPositive ? '+' : ''}{balance}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row justify-center gap-4">
+                    <button
+                      onClick={() => setTenderPhase('bidding')}
+                      className="w-full sm:w-auto px-12 py-6 bg-white/5 border border-white/10 rounded-[2rem] text-slate-400 font-black text-sm uppercase tracking-widest hover:text-white transition-all order-2 sm:order-1"
+                    >
+                      Continue Bidding
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const payload: { studentId: string; points: number; description: string; date: string }[] = [];
+
+                        if (tenderMode === 'individual') {
+                          Object.entries(tenderSessionBalances).forEach(([sid, balance]) => {
+                            if (balance !== 0) {
+                              payload.push({
+                                studentId: sid,
+                                points: balance as number,
+                                description: "Royal Tender Session",
+                                date: new Date().toISOString()
+                              });
+                            }
+                          });
+                        } else {
+                          tenderGroups.forEach(group => {
+                            const balance = tenderSessionBalances[group.id] || 0;
+                            if (balance !== 0) {
+                              group.studentIds.forEach(sid => {
+                                payload.push({
+                                  studentId: sid,
+                                  points: balance,
+                                  description: `Royal Tender (${group.name})`,
+                                  date: new Date().toISOString()
+                                });
+                              });
+                            }
+                          });
+                        }
+
+                        if (payload.length > 0) {
+                          await fetch("/api/points/bulk", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ points: payload })
+                          });
+                        }
+
+                        setTenderPhase('setup');
+                        setTenderBids([]);
+                        setTenderSessionBalances({});
+                        fetchData();
+                      }}
+                      className="w-full sm:w-auto px-16 py-6 royal-gradient-gold rounded-[2rem] text-black font-black text-xl uppercase tracking-[0.2em] shadow-2xl hover:scale-105 transition-all order-1 sm:order-2"
+                    >
+                      Assign & Finish
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </div>
@@ -2476,7 +2749,126 @@ function App() {
         )}
       </AnimatePresence>
 
+      {/* Edit Group Modal */}
+      <AnimatePresence>
+        {editingGroup && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              onClick={() => setEditingGroup(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-slate-950 w-full max-w-2xl rounded-[3rem] p-6 sm:p-12 shadow-3xl border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
+            >
+              <div className="absolute -top-24 -left-24 w-48 h-48 royal-gradient-gold opacity-10 blur-[80px] rounded-full" />
+
+              <div className="flex items-center justify-between mb-8 relative z-10 shrink-0">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">Configure Team</h2>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mt-1">Group Management</p>
+                </div>
+                <button onClick={() => setEditingGroup(null)} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-xl">
+                  <X className="w-8 h-8" />
+                </button>
+              </div>
+
+              <div className="space-y-8 relative z-10 overflow-y-auto pr-2 custom-scrollbar">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Team Name</label>
+                  <input
+                    type="text"
+                    value={editingGroup.name}
+                    onChange={(e) => setEditingGroup({ ...editingGroup, name: e.target.value })}
+                    placeholder="Enter team name..."
+                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black tracking-tight placeholder:text-slate-800"
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between px-2">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em]">Select Students</label>
+                    <span className="text-[10px] font-black text-royal-gold uppercase tracking-widest">
+                      {editingGroup.studentIds.length} Selected
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {data.students.map(student => {
+                      const isSelected = editingGroup.studentIds.includes(student.id);
+                      const isInOtherGroup = tenderGroups.some(g => g.id !== editingGroup.id && g.studentIds.includes(student.id));
+
+                      return (
+                        <button
+                          key={student.id}
+                          disabled={isInOtherGroup}
+                          onClick={() => {
+                            const newIds = isSelected
+                              ? editingGroup.studentIds.filter(id => id !== student.id)
+                              : [...editingGroup.studentIds, student.id];
+                            setEditingGroup({ ...editingGroup, studentIds: newIds });
+                          }}
+                          className={cn(
+                            "flex items-center gap-4 p-4 rounded-2xl border transition-all text-left",
+                            isSelected
+                              ? "bg-royal-gold/10 border-royal-gold/50 text-white"
+                              : isInOtherGroup
+                                ? "bg-white/5 border-white/5 opacity-30 cursor-not-allowed"
+                                : "bg-white/5 border-white/10 text-slate-400 hover:border-white/20"
+                          )}
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-slate-900 overflow-hidden shrink-0">
+                            {student.photo ? (
+                              <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-slate-700">
+                                <Users className="w-5 h-5" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-black text-xs uppercase truncate">{student.name}</p>
+                            <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
+                              {isInOtherGroup ? 'Already in a team' : isSelected ? 'Selected' : 'Available'}
+                            </p>
+                          </div>
+                          {isSelected && <div className="w-2 h-2 rounded-full bg-royal-gold shadow-[0_0_10px_rgba(255,215,0,0.5)]" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-8 mt-4 border-t border-white/5 relative z-10 shrink-0">
+                <button
+                  onClick={() => {
+                    setTenderGroups(prev => {
+                      const exists = prev.find(g => g.id === editingGroup.id);
+                      if (exists) {
+                        return prev.map(g => g.id === editingGroup.id ? editingGroup : g);
+                      }
+                      return [...prev, editingGroup];
+                    });
+                    setEditingGroup(null);
+                  }}
+                  className="w-full royal-gradient-gold text-black py-6 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase"
+                >
+                  Save Team Configuration
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Add Gallery Modal */}
+
       <AnimatePresence>
         {showAddGallery && (
           <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
