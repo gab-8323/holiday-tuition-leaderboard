@@ -30,7 +30,17 @@ import {
   ImageIcon,
   Camera,
   Gavel,
-  Coins
+  Coins,
+  Calculator,
+  Globe,
+  PenTool,
+  Clock,
+  Smile,
+  Gamepad2,
+  CheckCircle2,
+  MoreHorizontal,
+  ChevronLeft,
+  Minus
 } from "lucide-react";
 import {
   BarChart,
@@ -51,6 +61,26 @@ import { twMerge } from "tailwind-merge";
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+const categoryIcons = {
+  "Attendance": CheckCircle2,
+  "On Time": Clock,
+  "Behavior": Smile,
+  "Participation": Zap,
+  "Homework": PenTool,
+  "Math Quiz": Calculator,
+  "Science": Globe,
+  "Games": Gamepad2,
+  "Special Award": Trophy,
+};
+
+const categoryDefaults = {
+  "Attendance": 5,
+  "On Time": 10,
+  "Behavior": 1,
+  "Participation": 1,
+  "Homework": 10,
+};
 
 // Types
 interface Student {
@@ -157,6 +187,7 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   const [showBulkAdd, setShowBulkAdd] = useState(false);
+  const [bulkStep, setBulkStep] = useState<"category" | "students">("category");
   const [bulkCategory, setBulkCategory] = useState("Math Quiz");
   const [bulkDate, setBulkDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [bulkPoints, setBulkPoints] = useState<Record<string, string>>({});
@@ -188,6 +219,39 @@ function App() {
   const [resetPassword, setResetPassword] = useState("");
   const [showCelebration, setShowCelebration] = useState<{ name: string; points: number } | null>(null);
   const [editingGroup, setEditingGroup] = useState<{ id: string; name: string; studentIds: string[] } | null>(null);
+
+  // Handle mobile back button for modals
+  useEffect(() => {
+    const isModalOpen = showBulkAdd || showLogin || showAddStudent || !!showAddPoints || showAddGallery || !!editingStudent || !!editingGroup || showResetConfirm;
+
+    if (isModalOpen) {
+      // Push a state so the back button has something to "pop"
+      window.history.pushState({ modal: true }, "");
+
+      const handlePopState = () => {
+        if (showBulkAdd && bulkStep === "students") {
+          setBulkStep("category");
+          // Re-push to keep the "modal open" state in history
+          window.history.pushState({ modal: true }, "");
+        } else {
+          // Close all modals
+          setShowBulkAdd(false);
+          setShowLogin(false);
+          setShowAddStudent(false);
+          setShowAddPoints(null);
+          setShowAddGallery(false);
+          setEditingStudent(null);
+          setEditingGroup(null);
+          setShowResetConfirm(false);
+        }
+      };
+
+      window.addEventListener("popstate", handlePopState);
+      return () => {
+        window.removeEventListener("popstate", handlePopState);
+      };
+    }
+  }, [showBulkAdd, bulkStep, showLogin, showAddStudent, showAddPoints, showAddGallery, editingStudent, editingGroup, showResetConfirm]);
 
   const handlePinchStart = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
@@ -2382,149 +2446,275 @@ function App() {
       {/* Bulk Add Marks Modal */}
       <AnimatePresence>
         {showBulkAdd && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center px-0 sm:px-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-950/80 backdrop-blur-md"
+              className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl"
               onClick={() => setShowBulkAdd(false)}
             />
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-slate-950 w-full max-w-2xl rounded-[3rem] shadow-3xl overflow-hidden flex flex-col h-[85vh] border border-white/10"
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative bg-slate-950 w-full h-full sm:h-[90vh] sm:max-w-4xl sm:rounded-[3rem] shadow-3xl overflow-hidden flex flex-col border-t sm:border border-white/10"
             >
-              <div className="p-5 sm:p-8 border-b border-white/5 flex items-center justify-between royal-gradient-gold text-black">
-                <div>
-                  <h2 className="text-xl sm:text-2xl font-black tracking-tighter uppercase">Add Royal Marks</h2>
-                  <p className="text-black/60 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] mt-1">Distribute points to the academy</p>
+              {/* Header */}
+              <div className="p-6 sm:p-8 border-b border-white/5 flex items-center justify-between royal-gradient-gold text-black">
+                <div className="flex items-center gap-4">
+                  {bulkStep === "students" && (
+                    <button
+                      onClick={() => setBulkStep("category")}
+                      className="p-2 hover:bg-black/10 rounded-xl transition-all"
+                    >
+                      <ChevronLeft className="w-6 h-6" />
+                    </button>
+                  )}
+                  <div>
+                    <h2 className="text-xl sm:text-2xl font-black tracking-tighter uppercase">
+                      {bulkStep === "category" ? "Select Category" : `Marking: ${bulkCategory}`}
+                    </h2>
+                    <p className="text-black/60 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] mt-1">
+                      {bulkStep === "category" ? "Choose what to award today" : "Tap photos to adjust marks"}
+                    </p>
+                  </div>
                 </div>
                 <button onClick={() => setShowBulkAdd(false)} className="text-black/60 hover:text-black transition-colors p-2 hover:bg-black/5 rounded-xl">
                   <X className="w-6 h-6 sm:w-7 sm:h-7" />
                 </button>
               </div>
 
-              <div className="p-5 sm:p-8 bg-white/5 border-b border-white/5 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-                <div className="space-y-2 sm:space-y-3">
-                  <label className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Category</label>
-                  <div className="space-y-2 sm:space-y-3">
-                    {!isAddingNewCategoryBulk ? (
-                      <select
-                        value={bulkCategory}
-                        onChange={(e) => {
-                          if (e.target.value === "ADD_NEW") {
-                            setIsAddingNewCategoryBulk(true);
-                            setBulkCategory("");
-                          } else {
-                            setBulkCategory(e.target.value);
-                          }
-                        }}
-                        className="w-full px-4 py-3 sm:px-6 sm:py-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white text-sm sm:text-base uppercase tracking-widest cursor-pointer appearance-none"
-                      >
-                        {dynamicCategories.map(cat => (
-                          <option key={cat} value={cat} className="bg-slate-900 text-white">{cat}</option>
-                        ))}
-                        <option value="ADD_NEW" className="bg-slate-900 text-royal-gold font-bold">+ Add New Category...</option>
-                      </select>
-                    ) : (
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={bulkCategory}
-                          onChange={(e) => setBulkCategory(e.target.value)}
-                          placeholder="Enter new category"
-                          autoFocus
-                          className="flex-1 px-4 py-3 sm:px-6 sm:py-4 bg-white/5 border border-royal-gold/50 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white text-sm sm:text-base uppercase tracking-widest"
-                        />
-                        <button
+              {/* Step 1: Category Selection */}
+              {bulkStep === "category" && (
+                <div className="flex-1 overflow-y-auto p-6 sm:p-10 no-scrollbar">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 sm:gap-6">
+                    {dynamicCategories.map((cat) => {
+                      const Icon = (categoryIcons as any)[cat] || MoreHorizontal;
+                      return (
+                        <motion.button
+                          key={cat}
+                          whileHover={{ scale: 1.05, y: -5 }}
+                          whileTap={{ scale: 0.95 }}
                           onClick={() => {
-                            setIsAddingNewCategoryBulk(false);
-                            if (!bulkCategory) setBulkCategory(dynamicCategories[0]);
+                            setBulkCategory(cat);
+                            setBulkStep("students");
+                            setBulkPoints({});
                           }}
-                          className="px-3 bg-white/10 rounded-2xl text-slate-400 hover:text-white transition-colors"
+                          className="flex flex-col items-center justify-center p-6 sm:p-8 rounded-[2rem] bg-white/5 border border-white/10 hover:border-royal-gold/50 hover:bg-white/10 transition-all group aspect-square"
                         >
-                          <X className="w-4 h-4 sm:w-5 sm:h-5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-2 sm:space-y-3">
-                  <label className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Date</label>
-                  <input
-                    type="date"
-                    value={bulkDate}
-                    onChange={(e) => setBulkDate(e.target.value)}
-                    className="w-full px-4 py-3 sm:px-6 sm:py-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white text-sm sm:text-base uppercase tracking-widest cursor-pointer"
-                  />
-                </div>
-              </div>
+                          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-royal-gold/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                            <Icon className="w-6 h-6 sm:w-8 sm:h-8 text-royal-gold" />
+                          </div>
+                          <span className="text-[10px] sm:text-xs font-black text-white uppercase tracking-widest text-center leading-tight">
+                            {cat}
+                          </span>
+                        </motion.button>
+                      );
+                    })}
 
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2 sm:space-y-3 no-scrollbar bg-black/20">
-                {data.students.map((student) => (
-                  <div key={student.id} className="flex items-center gap-4 p-3 bg-white/5 border border-white/5 rounded-2xl group hover:bg-white/10 transition-all">
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-slate-900 border border-white/10 flex-shrink-0">
-                      {student.photo ? (
-                        <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-700">
-                          <Users className="w-5 h-5" />
+                    {/* Add New Category Tile */}
+                    <motion.button
+                      whileHover={{ scale: 1.05, y: -5 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={() => setIsAddingNewCategoryBulk(true)}
+                      className="flex flex-col items-center justify-center p-6 sm:p-8 rounded-[2rem] bg-white/5 border border-dashed border-white/20 hover:border-royal-gold/50 hover:bg-white/10 transition-all group aspect-square"
+                    >
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4">
+                        <Plus className="w-6 h-6 sm:w-8 sm:h-8 text-slate-500" />
+                      </div>
+                      <span className="text-[10px] sm:text-xs font-black text-slate-500 uppercase tracking-widest text-center">
+                        New Category
+                      </span>
+                    </motion.button>
+                  </div>
+
+                  {/* New Category Input Overlay */}
+                  <AnimatePresence>
+                    {isAddingNewCategoryBulk && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 20 }}
+                        className="mt-8 p-6 bg-white/5 rounded-[2rem] border border-royal-gold/30"
+                      >
+                        <label className="text-[9px] font-black text-royal-gold uppercase tracking-[0.4em] mb-4 block">Enter Category Name</label>
+                        <div className="flex gap-3">
+                          <input
+                            type="text"
+                            value={bulkCategory}
+                            onChange={(e) => setBulkCategory(e.target.value)}
+                            placeholder="e.g. Science Quiz"
+                            autoFocus
+                            className="flex-1 px-6 py-4 bg-black/40 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white text-sm uppercase tracking-widest"
+                          />
+                          <button
+                            onClick={() => {
+                              if (bulkCategory) {
+                                const initialPoints: Record<string, string> = {};
+                                data.students.forEach(s => {
+                                  initialPoints[s.id] = "0";
+                                });
+                                setBulkPoints(initialPoints);
+                                setBulkStep("students");
+                              }
+                              setIsAddingNewCategoryBulk(false);
+                            }}
+                            className="px-8 bg-royal-gold text-black rounded-2xl font-black text-xs uppercase tracking-widest"
+                          >
+                            NEXT
+                          </button>
                         </div>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-black text-sm text-white truncate uppercase tracking-tight group-hover:text-royal-gold transition-colors">{student.name}</h4>
-                    </div>
-                    <div className="w-24">
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+
+              {/* Step 2: Member Selection Grid */}
+              {bulkStep === "students" && (
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {/* Date Picker */}
+                  <div className="px-6 py-4 bg-white/5 border-b border-white/5 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Calendar className="w-4 h-4 text-royal-gold" />
                       <input
-                        type="number"
-                        step="any"
-                        placeholder="0"
-                        value={bulkPoints[student.id] || ""}
-                        onChange={(e) => setBulkPoints(prev => ({ ...prev, [student.id]: e.target.value }))}
-                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-center font-black text-royal-gold placeholder:text-slate-800 text-lg"
+                        type="date"
+                        value={bulkDate}
+                        onChange={(e) => setBulkDate(e.target.value)}
+                        className="bg-transparent text-white font-black text-xs uppercase tracking-widest outline-none cursor-pointer"
                       />
                     </div>
+                    <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                      {data.students.length} Members
+                    </div>
                   </div>
-                ))}
-                {data.students.length === 0 && (
-                  <div className="text-center py-20 text-slate-700 font-black uppercase tracking-[0.4em]">No royal students found</div>
-                )}
-              </div>
 
-              <div className="p-5 sm:p-8 bg-slate-950 border-t border-white/5">
-                <button
-                  onClick={async () => {
-                    const payload = Object.entries(bulkPoints)
-                      .filter(([_, points]) => points && parseFloat(points as string) !== 0)
-                      .map(([studentId, points]) => ({
-                        studentId,
-                        points: parseFloat(points as string),
-                        description: bulkCategory,
-                        date: bulkDate
-                      }));
+                  {/* Photo Grid */}
+                  <div className="flex-1 overflow-y-auto p-4 sm:p-8 no-scrollbar bg-black/20">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 sm:gap-6">
+                      {data.students.map((student) => {
+                        const currentVal = parseFloat(bulkPoints[student.id] || "0");
+                        const isActive = currentVal !== 0;
 
-                    if (payload.length === 0) return;
+                        return (
+                          <motion.div
+                            key={student.id}
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            onClick={() => {
+                              if (currentVal === 0) {
+                                const defaultVal = (categoryDefaults as any)[bulkCategory] || 1;
+                                setBulkPoints(prev => ({ ...prev, [student.id]: defaultVal.toString() }));
+                              }
+                            }}
+                            className="relative group aspect-square cursor-pointer"
+                          >
+                            {/* Student Photo */}
+                            <div className={cn(
+                              "w-full h-full rounded-2xl sm:rounded-[2rem] overflow-hidden border-2 transition-all duration-500 shadow-xl",
+                              isActive ? "border-royal-gold shadow-[0_0_30px_rgba(255,215,0,0.2)]" : "border-white/10"
+                            )}>
+                              {student.photo ? (
+                                <img
+                                  src={student.photo}
+                                  alt={student.name}
+                                  className={cn(
+                                    "w-full h-full object-cover transition-all duration-500",
+                                    isActive ? "blur-sm scale-110" : ""
+                                  )}
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-slate-900 text-slate-700">
+                                  <Users className="w-8 h-8" />
+                                </div>
+                              )}
+                            </div>
 
-                    await fetch("/api/points/bulk", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ points: payload })
-                    });
+                            {/* Marking Overlay */}
+                            <div className={cn(
+                              "absolute inset-0 flex flex-col items-center justify-center p-2 transition-all duration-500",
+                              isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                            )}>
+                              <div className="bg-black/60 backdrop-blur-md rounded-2xl p-2 sm:p-3 border border-white/20 flex flex-col items-center gap-2 shadow-2xl">
+                                <span className="text-[8px] sm:text-[10px] font-black text-white/60 uppercase tracking-widest truncate max-w-[60px] sm:max-w-none">
+                                  {student.name}
+                                </span>
+                                <div className="flex items-center gap-2 sm:gap-3">
+                                  <button
+                                    onClick={() => {
+                                      const step = bulkCategory === "Homework" ? 10 : 1;
+                                      const newVal = Math.max(0, currentVal - step);
+                                      setBulkPoints(prev => ({ ...prev, [student.id]: newVal.toString() }));
+                                    }}
+                                    className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-white/10 flex items-center justify-center hover:bg-red-500 hover:text-white transition-all"
+                                  >
+                                    <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
+                                  </button>
+                                  <span className="text-sm sm:text-xl font-black text-royal-gold font-mono min-w-[20px] text-center">
+                                    {currentVal}
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      const step = bulkCategory === "Homework" ? 10 : 1;
+                                      const newVal = currentVal + step;
+                                      setBulkPoints(prev => ({ ...prev, [student.id]: newVal.toString() }));
+                                    }}
+                                    className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg bg-white/10 flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all"
+                                  >
+                                    <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
 
-                    setShowBulkAdd(false);
-                    setBulkPoints({});
-                    setIsAddingNewCategoryBulk(false);
-                    fetchData();
-                  }}
-                  className="w-full royal-gradient-gold text-black py-4 sm:py-5 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all flex items-center justify-center gap-3 sm:gap-4 tracking-[0.2em] uppercase text-sm sm:text-base"
-                >
-                  <Award className="w-5 h-5 sm:w-6 sm:h-6" />
-                  BESTOW ROYAL MARKS
-                </button>
-              </div>
+                  {/* Footer Actions */}
+                  <div className="p-6 sm:p-8 bg-slate-950 border-t border-white/5 flex gap-4">
+                    <button
+                      onClick={() => setBulkStep("category")}
+                      className="flex-1 py-4 bg-white/5 border border-white/10 rounded-2xl font-black text-xs text-slate-400 uppercase tracking-widest hover:bg-white/10 transition-all"
+                    >
+                      Change Category
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const payload = Object.entries(bulkPoints)
+                          .filter(([_, points]) => points && parseFloat(points as string) !== 0)
+                          .map(([studentId, points]) => ({
+                            studentId,
+                            points: parseFloat(points as string),
+                            description: bulkCategory,
+                            date: bulkDate
+                          }));
+
+                        if (payload.length === 0) return;
+
+                        await fetch("/api/points/bulk", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ points: payload })
+                        });
+
+                        setShowBulkAdd(false);
+                        setBulkStep("category");
+                        setBulkPoints({});
+                        setIsAddingNewCategoryBulk(false);
+                        fetchData();
+                      }}
+                      className="flex-[2] royal-gradient-gold text-black py-4 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all flex items-center justify-center gap-3 tracking-[0.2em] uppercase text-sm"
+                    >
+                      <Award className="w-5 h-5" />
+                      SUBMIT MARKS
+                    </button>
+                  </div>
+                </div>
+              )}
             </motion.div>
           </div>
         )}
