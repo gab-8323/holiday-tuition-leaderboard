@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "TenderSession": {
+      "title": "Tender Session State",
+      "description": "Global state of the ongoing tender activity",
+      "type": "object",
+      "properties": {
+        "phase": { "type": "string", "enum": ["setup", "bidding", "reveal", "action", "settlement"] },
+        "mode": { "type": "string", "enum": ["individual", "group"] },
+        "startingPoints": { "type": "number" },
+        "activeBidderId": { "type": "string", "description": "The ID of the group or student currently bidding" },
+        "turnIndex": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["phase", "mode", "startingPoints", "updatedAt"]
+    },
+    "TenderGroup": {
+      "title": "Tender Group",
+      "description": "A group created for the tender activity",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "key": { "type": "number", "description": "The unique numeric key for the group to join" },
+        "studentIds": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name", "key", "studentIds"]
+    },
+    "TenderBid": {
+      "title": "Tender Bid",
+      "description": "A bid placed by a group or student",
+      "type": "object",
+      "properties": {
+        "bidderId": { "type": "string" },
+        "bidderName": { "type": "string" },
+        "points": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bidderId", "bidderName", "points", "timestamp"]
+    },
+    "TenderSessionBalance": {
+      "title": "Tender Session Balance",
+      "description": "Temporary balance for a group or student during the session",
+      "type": "object",
+      "properties": {
+        "balance": { "type": "number" }
+      },
+      "required": ["balance"]
+    }
+  },
+  "firestore": {
+    "/tender_session/current": {
+      "schema": "TenderSession",
+      "description": "The current global state of the tender activity"
+    },
+    "/tender_groups/{groupId}": {
+      "schema": "TenderGroup",
+      "description": "Pre-defined groups for the tender activity"
+    },
+    "/tender_bids/{bidId}": {
+      "schema": "TenderBid",
+      "description": "Bids placed in the current round"
+    },
+    "/tender_balances/{id}": {
+      "schema": "TenderSessionBalance",
+      "description": "Session balances (temporary) indexed by studentId or groupId"
+    }
+  }
+}

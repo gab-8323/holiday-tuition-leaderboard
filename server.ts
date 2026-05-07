@@ -20,7 +20,7 @@ function getSupabase() {
   if (!supabase) {
     const url = process.env.SUPABASE_URL?.trim();
     const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY)?.trim();
-
+    
     console.log("Initializing Supabase...");
     console.log("URL exists:", !!url, url ? `(${url.substring(0, 10)}...)` : "");
     console.log("Key exists:", !!key, key ? `(${key.substring(0, 5)}...)` : "");
@@ -37,6 +37,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 async function startServer() {
+  console.log("Starting server.ts...");
   const app = express();
   const PORT = 3000;
 
@@ -75,19 +76,22 @@ async function startServer() {
 
   // API Routes
   app.get("/api/health", (req, res) => {
+    console.log("Health check request received");
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-    res.json({
-      status: "ok",
+    res.json({ 
+      status: "ok", 
+      time: new Date().toISOString(),
       supabaseConfigured: !!(url && key),
       env: process.env.NODE_ENV
     });
   });
 
   app.get(["/api/data", "/api/data/"], async (req, res) => {
-    console.log("GET /api/data");
+    console.log("GET /api/data - Start");
     try {
       const client = getSupabase();
+      console.log("Supabase client initialized");
       const { data: students, error: sError } = await client
         .from("students")
         .select("*")
@@ -133,8 +137,8 @@ async function startServer() {
         createdAt: item.created_at
       }));
 
-      res.json({
-        students: mappedStudents,
+      res.json({ 
+        students: mappedStudents, 
         points: mappedPoints,
         gallery: mappedGallery
       });
@@ -263,7 +267,7 @@ async function startServer() {
       // but let's be explicit if not.
       await client.from("points").delete().eq("student_id", id);
       const { error } = await client.from("students").delete().eq("id", id);
-
+      
       if (error) throw error;
       res.json({ success: true });
     } catch (error: any) {
@@ -278,11 +282,11 @@ async function startServer() {
       const client = getSupabase();
       const { data, error } = await client
         .from("points")
-        .insert([{
-          student_id: studentId,
-          points: parseFloat(points),
-          description,
-          date: date || new Date().toISOString()
+        .insert([{ 
+          student_id: studentId, 
+          points: parseFloat(points), 
+          description, 
+          date: date || new Date().toISOString() 
         }])
         .select()
         .single();
@@ -342,21 +346,34 @@ async function startServer() {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
   });
 
+  // Global Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("GLOBAL ERROR:", err);
+    res.status(500).json({ error: err.message || "Internal Server Error" });
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    console.log("Initializing Vite dev server middleware...");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
+    console.log("Vite dev server middleware initialized.");
     app.use(vite.middlewares);
   } else {
+    console.log("Running in production mode, serving dist...");
     const distPath = path.join(process.cwd(), "dist");
+    if (!fs.existsSync(distPath)) {
+      console.warn("WARNING: dist directory does not exist. Run 'npm run build' first.");
+    }
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
 
+  console.log(`Binding to port ${PORT}...`);
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });

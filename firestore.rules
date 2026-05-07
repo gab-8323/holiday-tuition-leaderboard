@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "stephenludia@gmail.com"
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // --- Dynamic Session State ---
+    match /tender_session/{sessionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // --- Groups ---
+    match /tender_groups/{groupId} {
+      function isValidGroup(data) {
+        return data.name is string && data.name.size() <= 100 &&
+               data.studentIds is list && data.studentIds.size() <= 100;
+      }
+      allow read: if true;
+      allow write: if isAdmin() && isValidGroup(incoming());
+    }
+
+    // --- Bids ---
+    match /tender_bids/{bidId} {
+      function isValidBid(data) {
+        return data.keys().hasAll(['bidderId', 'bidderName', 'points', 'timestamp']) &&
+               data.keys().size() == 4 &&
+               data.bidderId is string && data.bidderId.size() <= 128 &&
+               data.bidderName is string && data.bidderName.size() <= 100 &&
+               data.points is number && data.points >= 0 &&
+               data.timestamp is timestamp;
+      }
+
+      allow get, list: if true;
+      allow create: if (
+        isSignedIn() && 
+        isValidBid(incoming()) &&
+        incoming().timestamp == request.time &&
+        get(/databases/$(database)/documents/tender_session/current).data.phase == "bidding"
+      );
+      allow delete: if isAdmin();
+      allow update: if false;
+    }
+
+    // --- Balances ---
+    match /tender_balances/{balanceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // --- Legacy Points (Fallback) ---
+    match /points/{pointId} {
+       allow read: if true;
+       allow write: if isAdmin();
+    }
+    
+    match /students/{studentId} {
+       allow read: if true;
+       allow write: if isAdmin();
+    }
+  }
+}
