@@ -804,31 +804,117 @@ function App() {
         ))}
       </div>
 
-      {/* Point Feedack Overlay */}
-      <AnimatePresence>
+      {/* Point Feedback Overlay */}
+      <AnimatePresence mode="wait">
         {balanceDiff && (
           <motion.div 
-            initial={{ opacity: 0, y: 100, scale: 0.5 }}
-            animate={{ opacity: 1, y: -100, scale: 1.2 }}
-            exit={{ opacity: 0, scale: 2 }}
-            className="fixed inset-0 z-[200] pointer-events-none flex items-center justify-center"
+            key={`${balanceDiff.id}-${balanceDiff.diff}`}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.5, filter: "blur(20px)" }}
+            className="fixed inset-0 z-[200] pointer-events-none flex items-center justify-center px-4 overflow-hidden"
           >
-            <div className={cn(
-              "px-12 py-8 rounded-[3rem] border-4 flex flex-col items-center gap-4 transition-all duration-500",
-              balanceDiff.diff > 0 
-                ? "bg-emerald-500/20 border-emerald-500 shadow-[0_0_100px_rgba(16,185,129,0.4)]" 
-                : "bg-red-500/20 border-red-500 shadow-[0_0_100px_rgba(239,68,68,0.4)]"
-            )}>
-              <p className={cn(
-                "text-8xl font-black font-mono tracking-tighter",
-                balanceDiff.diff > 0 ? "text-emerald-400" : "text-red-400"
-              )}>
+            {/* Ambient Particles */}
+            {[...Array(12)].map((_, i) => (
+              <motion.div
+                key={i}
+                initial={{ 
+                  x: 0, 
+                  y: 0, 
+                  opacity: 0,
+                  scale: 0
+                }}
+                animate={{ 
+                  x: (Math.random() - 0.5) * 600, 
+                  y: (Math.random() - 0.5) * 600, 
+                  opacity: [0, 1, 0],
+                  scale: Math.random() * 2 + 1,
+                  rotate: Math.random() * 360
+                }}
+                transition={{ 
+                  duration: 2 + Math.random() * 2,
+                  repeat: Infinity,
+                  ease: "easeOut"
+                }}
+                className={cn(
+                  "absolute w-2 h-2 rounded-full",
+                  balanceDiff.diff > 0 ? "bg-emerald-400/60" : "bg-red-500/60"
+                )}
+              />
+            ))}
+
+            {/* Background Glow Pulse */}
+            <motion.div 
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ 
+                scale: [1, 2, 1.5], 
+                opacity: [0, 0.7, 0.3],
+              }}
+              className={cn(
+                "absolute w-[400px] h-[400px] rounded-full blur-[100px]",
+                balanceDiff.diff > 0 ? "bg-emerald-500/30" : "bg-red-600/30"
+              )}
+            />
+
+            <motion.div 
+              initial={{ y: 150, scale: 0.4, rotate: balanceDiff.diff > 0 ? 10 : -10 }}
+              animate={{ 
+                y: -100, 
+                scale: 1,
+                rotate: 0,
+                x: balanceDiff.diff < 0 ? [0, -20, 20, -20, 20, -10, 10, 0] : 0
+              }}
+              transition={{ 
+                x: { duration: 0.4, ease: "easeInOut" },
+                default: { type: "spring", damping: 8, stiffness: 100 }
+              }}
+              className={cn(
+                "relative px-10 py-12 md:px-16 md:py-16 rounded-[3.5rem] border-[8px] flex flex-col items-center gap-2 transition-all duration-500",
+                balanceDiff.diff > 0 
+                  ? "bg-slate-900/95 border-emerald-500 shadow-[0_0_120px_rgba(16,185,129,0.6)]" 
+                  : "bg-slate-900/95 border-red-500 shadow-[0_0_120px_rgba(239,68,68,0.6)]"
+              )}
+            >
+              <div className="absolute inset-0 rounded-[3rem] overflow-hidden">
+                <motion.div 
+                  animate={{ 
+                    background: balanceDiff.diff > 0 
+                      ? ["linear-gradient(45deg, transparent, rgba(16,185,129,0.1), transparent)"]
+                      : ["linear-gradient(45deg, transparent, rgba(239,68,68,0.1), transparent)"],
+                    x: ["-100%", "200%"]
+                  }}
+                  transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                  className="absolute inset-0 w-full h-full"
+                />
+              </div>
+
+              <motion.div
+                initial={{ scale: 0, rotate: -20 }}
+                animate={{ scale: 1, rotate: 0 }}
+                transition={{ delay: 0.1, type: "spring" }}
+                className={cn(
+                  "text-8xl md:text-[12rem] font-black font-mono tracking-tighter leading-none mb-4",
+                  balanceDiff.diff > 0 ? "text-emerald-400" : "text-red-400"
+                )}
+              >
                 {balanceDiff.diff > 0 ? '+' : ''}{balanceDiff.diff}
-              </p>
-              <p className="text-white font-black uppercase tracking-[0.4em] text-sm">
-                Points {balanceDiff.diff > 0 ? 'Awarded' : 'Deducted'}
-              </p>
-            </div>
+              </motion.div>
+              
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="flex flex-col items-center space-y-4"
+              >
+                <p className="text-white font-black uppercase tracking-[0.5em] text-xs md:text-lg text-center">
+                  Points {balanceDiff.diff > 0 ? 'Awarded' : 'Deducted'}
+                </p>
+                <div className={cn(
+                  "h-2 w-24 rounded-full",
+                  balanceDiff.diff > 0 ? "bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,1)]" : "bg-red-500 shadow-[0_0_15px_rgba(239,68,68,1)]"
+                )} />
+              </motion.div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -2453,10 +2539,11 @@ function App() {
                 <AnimatePresence mode="wait">
                   <motion.div 
                     key={tenderTurnIndex}
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -20 }}
-                    className="space-y-6"
+                    initial={{ opacity: 0, scale: 0.8, y: 30 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 1.2, y: -30, filter: "blur(10px)" }}
+                    transition={{ type: "spring", damping: 12, stiffness: 100 }}
+                    className="space-y-8"
                   >
                     <p className="text-slate-500 font-black uppercase tracking-[0.4em]">Current Bidder</p>
                     {(() => {
@@ -2538,7 +2625,16 @@ function App() {
                             </div>
                             <div className="flex items-center justify-center gap-2 sm:gap-3 mt-6">
                               <Coins className="w-4 h-4 sm:w-5 sm:h-5 text-royal-gold" />
-                              <span className="text-2xl sm:text-3xl font-black text-royal-gold font-mono">{currentBid.points}</span>
+                              <motion.span 
+                                animate={isMyTurn ? { 
+                                  scale: [1, 1.1, 1],
+                                  color: ["#FFD700", "#FFFFFF", "#FFD700"]
+                                } : {}}
+                                transition={{ duration: 2, repeat: Infinity }}
+                                className="text-2xl sm:text-4xl font-black text-royal-gold font-mono"
+                              >
+                                {currentBid.points}
+                              </motion.span>
                             </div>
                           </div>
                         </div>
