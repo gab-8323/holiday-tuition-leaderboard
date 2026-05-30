@@ -170,7 +170,7 @@ class ErrorBoundary extends Component<any, any> {
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, User, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { getFirestore, doc, onSnapshot, setDoc, updateDoc, collection, query, getDocs, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc, onSnapshot, setDoc, updateDoc, collection, query, getDocs, deleteDoc, writeBatch, serverTimestamp } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 enum OperationType {
@@ -213,7 +213,11 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 // Initialize Firebase
 const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+const db = initializeFirestore(firebaseApp, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+}, firebaseConfig.firestoreDatabaseId);
 const auth = getAuth(firebaseApp);
 
 export default function AppWrapper() {
@@ -222,6 +226,22 @@ export default function AppWrapper() {
       <App />
     </ErrorBoundary>
   );
+}
+
+function getAcademicYearOfDate(dateStr: any): string {
+  try {
+    if (!dateStr) return "2025-2026";
+    const d = (dateStr instanceof Date) ? dateStr : new Date(dateStr);
+    if (isNaN(d.getTime())) return "2025-2026";
+    const year = d.getFullYear();
+    if (d.getMonth() >= 5) { // June is month index 5 (0-indexed)
+      return `${year}-${year + 1}`;
+    } else {
+      return `${year - 1}-${year}`;
+    }
+  } catch (e) {
+    return "2025-2026";
+  }
 }
 
 function App() {
@@ -245,6 +265,32 @@ function App() {
   const [bulkPoints, setBulkPoints] = useState<Record<string, string>>({});
   const [dailyViewDate, setDailyViewDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [weeklyViewDate, setWeeklyViewDate] = useState(format(new Date(), "yyyy-MM-dd"));
+
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(() => {
+    try {
+      return getAcademicYearOfDate(new Date());
+    } catch {
+      return "2025-2026";
+    }
+  });
+
+  const academicYears = useMemo(() => {
+    const years = new Set<string>();
+    try {
+      years.add(getAcademicYearOfDate(new Date()));
+    } catch {
+      years.add("2025-2026");
+    }
+    if (data && Array.isArray(data.points)) {
+      data.points.forEach(p => {
+        if (p.date || p.createdAt) {
+          const ay = getAcademicYearOfDate(p.date || p.createdAt);
+          years.add(ay);
+        }
+      });
+    }
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [data?.points]);
 
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [isAddingNewCategoryBulk, setIsAddingNewCategoryBulk] = useState(false);
@@ -368,6 +414,15 @@ function App() {
     });
     return unsub;
   }, []);
+
+  // Lock students to the current week & current day
+  useEffect(() => {
+    if (!isAdmin) {
+      const today = format(new Date(), "yyyy-MM-dd");
+      setDailyViewDate(today);
+      setWeeklyViewDate(today);
+    }
+  }, [isAdmin]);
 
   // Firebase Real-time Sync
   useEffect(() => {
@@ -624,13 +679,180 @@ function App() {
   }, [selectedGalleryIndex]);
 
   // Calculations
+  const resolvedDailyViewDate = useMemo(() => {
+    if (isAdmin) return dailyViewDate;
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const yesterdayStr = format(subDays(new Date(), 1), "yyyy-MM-dd");
+
+    const hasPointsOnDay = (dateStr: string) => {
+      return data.points.some(p => {
+        try {
+          const dStr = p.date ? p.date : format(safeParseISO(p.createdAt), "yyyy-MM-dd");
+          return dStr === dateStr && p.points > 0;
+        } catch {
+          return false;
+        }
+      });
+    };
+
+    if (hasPointsOnDay(todayStr)) {
+      return todayStr;
+    }
+
+    if (hasPointsOnDay(yesterdayStr)) {
+      return yesterdayStr;
+    }
+
+    // Fallback to latest previous day with activity
+    const pastDates = data.points
+      .map(p => {
+        try {
+          return p.date ? p.date : format(safeParseISO(p.createdAt), "yyyy-MM-dd");
+        } catch {
+          return "";
+        }
+      })
+      .filter(dStr => dStr && dStr <= todayStr);
+
+    if (pastDates.length > 0) {
+      pastDates.sort((a, b) => b.localeCompare(a));
+      return pastDates[0];
+    }
+
+    return todayStr;
+  }, [data.points, isAdmin, dailyViewDate]);
+
+  const resolvedWeeklyViewDate = useMemo(() => {
+    if (isAdmin) return weeklyViewDate;
+    const today = new Date();
+    const todayStr = format(today, "yyyy-MM-dd");
+    const curStart = startOfWeek(today, { weekStartsOn: 1 });
+    const curEnd = endOfWeek(today, { weekStartsOn: 1 });
+
+    const lastWeekStart = startOfWeek(subWeeks(today, 1), { weekStartsOn: 1 });
+    const lastWeekEnd = endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 });
+
+    const hasPointsInInterval = (start: Date, end: Date) => {
+      return data.points.some(p => {
+        try {
+          const pDate = safeParseISO(p.date || p.createdAt);
+          return isWithinInterval(pDate, { start, end }) && p.points > 0;
+        } catch {
+          return false;
+        }
+      });
+    };
+
+    if (hasPointsInInterval(curStart, curEnd)) {
+      return todayStr;
+    }
+
+    if (hasPointsInInterval(lastWeekStart, lastWeekEnd)) {
+      return format(subWeeks(today, 1), "yyyy-MM-dd");
+    }
+
+    // Fallback to latest week with activity prior to current week start
+    const pastPoints = data.points.filter(p => {
+      try {
+        const pDate = safeParseISO(p.date || p.createdAt);
+        return pDate < curStart && p.points > 0;
+      } catch {
+        return false;
+      }
+    });
+
+    if (pastPoints.length > 0) {
+      const sorted = pastPoints.sort((a, b) => {
+        const dateA = safeParseISO(a.date || a.createdAt).getTime();
+        const dateB = safeParseISO(b.date || b.createdAt).getTime();
+        return dateB - dateA;
+      });
+      const latestPoint = sorted[0];
+      return latestPoint.date || format(safeParseISO(latestPoint.createdAt), "yyyy-MM-dd");
+    }
+
+    return todayStr;
+  }, [data.points, isAdmin, weeklyViewDate]);
+
+  const dailyStarsTitleInfo = useMemo(() => {
+    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const yesterdayStr = format(subDays(new Date(), 1), "yyyy-MM-dd");
+    
+    if (isAdmin) {
+      return {
+        title: "DAILY STARS",
+        subtitle: `Royal Performers for ${format(safeParseISO(resolvedDailyViewDate), "MMMM dd")}`
+      };
+    }
+    
+    if (resolvedDailyViewDate === todayStr) {
+      return {
+        title: "TODAY'S DAILY STARS",
+        subtitle: `Royal Performers for Today, ${format(safeParseISO(resolvedDailyViewDate), "MMMM dd")}`
+      };
+    } else if (resolvedDailyViewDate === yesterdayStr) {
+      return {
+        title: "YESTERDAY'S DAILY STARS",
+        subtitle: `Royal Performers for Yesterday, ${format(safeParseISO(resolvedDailyViewDate), "MMMM dd")} (Last Updated)`
+      };
+    } else {
+      return {
+        title: "PREVIOUS DAILY STARS",
+        subtitle: `Royal Performers for ${format(safeParseISO(resolvedDailyViewDate), "MMMM dd, yyyy")} (Last Updated)`
+      };
+    }
+  }, [resolvedDailyViewDate, isAdmin]);
+
+  const weeklyStarsTitleInfo = useMemo(() => {
+    const start = format(startOfWeek(safeParseISO(resolvedWeeklyViewDate), { weekStartsOn: 1 }), "MMM dd");
+    const end = format(endOfWeek(safeParseISO(resolvedWeeklyViewDate), { weekStartsOn: 1 }), "MMM dd, yyyy");
+    
+    if (isAdmin) {
+      return {
+        title: "Weekly Hall of Fame",
+        subtitle: `${start} - ${end}`
+      };
+    }
+
+    const today = new Date();
+    const curStart = startOfWeek(today, { weekStartsOn: 1 });
+    const curEnd = endOfWeek(today, { weekStartsOn: 1 });
+    const resolvedDate = safeParseISO(resolvedWeeklyViewDate);
+    const inCurrentWeek = isWithinInterval(resolvedDate, { start: curStart, end: curEnd });
+
+    const lastWeekStart = startOfWeek(subWeeks(today, 1), { weekStartsOn: 1 });
+    const lastWeekEnd = endOfWeek(subWeeks(today, 1), { weekStartsOn: 1 });
+    const inLastWeek = isWithinInterval(resolvedDate, { start: lastWeekStart, end: lastWeekEnd });
+
+    if (inCurrentWeek) {
+      return {
+        title: "Weekly Hall of Fame",
+        subtitle: `${start} - ${end} (Current Week)`
+      };
+    } else if (inLastWeek) {
+      return {
+        title: "LAST WEEK'S HALL OF FAME",
+        subtitle: `${start} - ${end} (Previous Week / Last Updated)`
+      };
+    } else {
+      return {
+        title: "PREVIOUS WEEK'S HALL OF FAME",
+        subtitle: `${start} - ${end} (Last Updated)`
+      };
+    }
+  }, [resolvedWeeklyViewDate, isAdmin]);
+
   const allTimeStats = useMemo(() => {
     const today = startOfDay(new Date());
     return data.students.map(student => {
-      const points = data.points.filter(p => p.studentId === student.id);
+      const points = data.points.filter(p => {
+        if (p.studentId !== student.id) return false;
+        if (selectedAcademicYear === "all") return true;
+        return getAcademicYearOfDate(p.date || p.createdAt) === selectedAcademicYear;
+      });
       const totalPoints = points.reduce((sum, p) => sum + p.points, 0);
-      const dailyPoints = points
-        .filter(p => isSameDay(safeParseISO(p.date), today))
+      const dailyPoints = data.points
+        .filter(p => p.studentId === student.id && isSameDay(safeParseISO(p.date), today))
         .reduce((sum, p) => sum + p.points, 0);
       
       return {
@@ -641,10 +863,10 @@ function App() {
         history: points.sort((a, b) => safeParseISO(b.date).getTime() - safeParseISO(a.date).getTime())
       };
     }).sort((a, b) => b.totalPoints - a.totalPoints);
-  }, [data]);
+  }, [data, selectedAcademicYear]);
 
   const weeklyLeaderboard = useMemo(() => {
-    const targetDate = safeParseISO(weeklyViewDate);
+    const targetDate = safeParseISO(resolvedWeeklyViewDate);
     const start = startOfWeek(targetDate, { weekStartsOn: 1 });
     const end = endOfWeek(targetDate, { weekStartsOn: 1 });
 
@@ -656,7 +878,11 @@ function App() {
         })
         .reduce((sum, p) => sum + p.points, 0);
       
-      const allPoints = data.points.filter(p => p.studentId === student.id);
+      const allPoints = data.points.filter(p => {
+        if (p.studentId !== student.id) return false;
+        if (selectedAcademicYear === "all") return true;
+        return getAcademicYearOfDate(p.date || p.createdAt) === selectedAcademicYear;
+      });
       const allTimePoints = allPoints.reduce((sum, p) => sum + p.points, 0);
 
       return { 
@@ -666,22 +892,25 @@ function App() {
         history: allPoints.sort((a, b) => safeParseISO(b.date).getTime() - safeParseISO(a.date).getTime())
       };
     }).filter(s => s.totalPoints > 0).sort((a, b) => (b.totalPoints - a.totalPoints) || (b.allTimePoints - a.allTimePoints));
-  }, [data, weeklyViewDate]);
+  }, [data, resolvedWeeklyViewDate, selectedAcademicYear]);
 
   const dailyLeaderboard = useMemo(() => {
-    const targetDate = safeParseISO(dailyViewDate);
+    const targetDate = safeParseISO(resolvedDailyViewDate);
     return data.students.map(student => {
       const points = data.points
         .filter(p => p.studentId === student.id && isSameDay(safeParseISO(p.date), targetDate))
         .reduce((sum, p) => sum + p.points, 0);
       
-      const allTimePoints = data.points
-        .filter(p => p.studentId === student.id)
-        .reduce((sum, p) => sum + p.points, 0);
+      const allPoints = data.points.filter(p => {
+        if (p.studentId !== student.id) return false;
+        if (selectedAcademicYear === "all") return true;
+        return getAcademicYearOfDate(p.date || p.createdAt) === selectedAcademicYear;
+      });
+      const allTimePoints = allPoints.reduce((sum, p) => sum + p.points, 0);
 
       return { ...student, totalPoints: points, allTimePoints }; // Reuse totalPoints key for consistent UI
     }).filter(s => s.totalPoints > 0).sort((a, b) => (b.totalPoints - a.totalPoints) || (b.allTimePoints - a.allTimePoints));
-  }, [data, dailyViewDate]);
+  }, [data, resolvedDailyViewDate, selectedAcademicYear]);
 
   const filteredLeaderboard = weeklyLeaderboard.filter(s => 
     s.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -704,50 +933,22 @@ function App() {
     return null;
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center space-y-8">
-        <motion.div 
-          animate={{ 
-            rotate: [0, 10, -10, 0],
-            scale: [1, 1.1, 1]
-          }}
-          transition={{ duration: 2, repeat: Infinity }}
-          className="bg-gradient-to-br from-indigo-500 to-purple-600 p-8 rounded-[3rem] shadow-[0_0_50px_rgba(79,70,229,0.3)]"
-        >
-          <Trophy className="w-20 h-20 text-white" />
-        </motion.div>
-        <div className="text-center">
-          <h1 className="text-2xl font-black text-white tracking-[0.3em] uppercase mb-2">Loading Stats</h1>
-          <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden mx-auto">
-            <motion.div 
-              initial={{ x: "-100%" }}
-              animate={{ x: "100%" }}
-              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-              className="w-full h-full bg-gradient-to-r from-transparent via-indigo-500 to-transparent"
-            />
-          </div>
-          {fetchError && (
-            <div className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl max-w-sm mx-auto">
-              <p className="text-red-400 text-xs font-bold uppercase tracking-widest leading-loose">
-                {fetchError}
-              </p>
-              <button 
-                onClick={() => fetchData()}
-                className="mt-4 text-[10px] text-white underline font-black uppercase tracking-widest hover:text-royal-gold transition-colors"
-              >
-                Try Again
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans pb-20 selection:bg-royal-gold selection:text-black overflow-x-hidden">
       <div className="noise-overlay" />
+      
+      {/* Sleek Golden-White Loading Line */}
+      {loading && (
+        <div className="fixed top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-royal-gold via-amber-300 to-royal-gold z-[100] overflow-hidden">
+          <motion.div 
+            initial={{ x: "-100%" }}
+            animate={{ x: "100%" }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+            className="w-full h-full bg-gradient-to-r from-transparent via-white to-transparent"
+          />
+        </div>
+      )}
       
       {/* Dynamic Spotlight Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -1054,8 +1255,13 @@ function App() {
                 LEADERBOARD
               </h1>
               <div className="flex items-center gap-2">
-                <div className="w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full bg-royal-gold animate-pulse" />
-                <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] truncate">Tuition Excellence</p>
+                <div className={cn(
+                  "w-1 h-1 sm:w-1.5 sm:h-1.5 rounded-full",
+                  loading ? "bg-amber-400 animate-ping" : "bg-royal-gold animate-pulse"
+                )} />
+                <p className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-[0.2em] sm:tracking-[0.3em] truncate">
+                  {loading ? "Syncing stats..." : "Tuition Excellence"}
+                </p>
               </div>
             </div>
           </div>
@@ -1098,6 +1304,22 @@ function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10 relative z-10">
+        {/* Error Callout */}
+        {fetchError && (
+          <div className="mb-8 p-6 bg-red-950/40 border border-red-500/30 rounded-[2rem] max-w-xl mx-auto text-center backdrop-blur-xl shadow-2xl relative overflow-hidden group">
+            <div className="absolute inset-0 bg-red-500/5 animate-pulse" />
+            <p className="text-red-400 text-xs sm:text-sm font-black uppercase tracking-widest leading-loose mb-4">
+              Error fetching leaderboard: {fetchError}
+            </p>
+            <button 
+              onClick={() => fetchData()}
+              className="relative px-6 py-3 rounded-xl bg-red-500 text-white font-black text-xs uppercase tracking-widest hover:bg-red-600 transition-all shadow-lg hover:shadow-red-500/20 active:scale-95"
+            >
+              Try Again
+            </button>
+          </div>
+        )}
+
         {/* Navigation Tabs */}
         <div className="flex items-center overflow-x-auto no-scrollbar bg-white/5 backdrop-blur-xl p-1 sm:p-2 rounded-[1.5rem] sm:rounded-[2.5rem] border border-white/10 mb-6 sm:mb-12 shadow-3xl">
           {[
@@ -1138,36 +1360,40 @@ function App() {
           {activeTab === "total" && (
             <div className="space-y-12">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 sm:gap-8 text-center sm:text-left">
-                <div className="flex flex-col items-center sm:items-start">
-                  <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500 uppercase whitespace-nowrap">Weekly Hall of Fame</h2>
+                <div className="flex flex-col items-center sm:items-start animate-fade-in">
+                  <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500 uppercase whitespace-nowrap">
+                    {weeklyStarsTitleInfo.title}
+                  </h2>
                   <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.3em] mt-1">
-                    {format(startOfWeek(safeParseISO(weeklyViewDate), { weekStartsOn: 1 }), "MMM dd")} - {format(endOfWeek(safeParseISO(weeklyViewDate), { weekStartsOn: 1 }), "MMM dd, yyyy")}
+                    {weeklyStarsTitleInfo.subtitle}
                   </p>
                 </div>
-                <div className="flex items-center bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden self-center sm:self-auto">
-                  <button 
-                    onClick={() => setWeeklyViewDate(format(subWeeks(safeParseISO(weeklyViewDate), 1), "yyyy-MM-dd"))}
-                    className="p-3 sm:p-4 hover:bg-white/10 text-slate-400 hover:text-white transition-all border-r border-white/5"
-                  >
-                    <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 rotate-90" />
-                  </button>
-                  <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center gap-2 sm:gap-3 relative">
-                    <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-royal-gold" />
-                    <span className="text-[9px] sm:text-[10px] font-black text-white uppercase tracking-widest">Select Week</span>
-                    <input 
-                      type="date" 
-                      value={weeklyViewDate || ""}
-                      onChange={(e) => setWeeklyViewDate(e.target.value)}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
+                {isAdmin && (
+                  <div className="flex items-center bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden self-center sm:self-auto">
+                    <button 
+                      onClick={() => setWeeklyViewDate(format(subWeeks(safeParseISO(weeklyViewDate), 1), "yyyy-MM-dd"))}
+                      className="p-3 sm:p-4 hover:bg-white/10 text-slate-400 hover:text-white transition-all border-r border-white/5"
+                    >
+                      <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 rotate-90" />
+                    </button>
+                    <div className="px-4 sm:px-6 py-2 sm:py-3 flex items-center gap-2 sm:gap-3 relative">
+                      <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-royal-gold" />
+                      <span className="text-[9px] sm:text-[10px] font-black text-white uppercase tracking-widest">Select Week</span>
+                      <input 
+                        type="date" 
+                        value={weeklyViewDate || ""}
+                        onChange={(e) => setWeeklyViewDate(e.target.value)}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                    </div>
+                    <button 
+                      onClick={() => setWeeklyViewDate(format(addWeeks(safeParseISO(weeklyViewDate), 1), "yyyy-MM-dd"))}
+                      className="p-3 sm:p-4 hover:bg-white/10 text-slate-400 hover:text-white transition-all border-l border-white/5"
+                    >
+                      <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 -rotate-90" />
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => setWeeklyViewDate(format(addWeeks(safeParseISO(weeklyViewDate), 1), "yyyy-MM-dd"))}
-                    className="p-3 sm:p-4 hover:bg-white/10 text-slate-400 hover:text-white transition-all border-l border-white/5"
-                  >
-                    <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5 -rotate-90" />
-                  </button>
-                </div>
+                )}
               </div>
 
               {weeklyLeaderboard.length > 0 ? (
@@ -1355,19 +1581,25 @@ function App() {
           {activeTab === "daily" && (
             <div className="space-y-12">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 sm:gap-8 text-center sm:text-left">
-                <div className="flex flex-col items-center sm:items-start">
-                  <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500 uppercase whitespace-nowrap">DAILY STARS</h2>
-                  <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.3em] mt-1">Royal Performers for {format(safeParseISO(dailyViewDate), "MMMM dd")}</p>
+                <div className="flex flex-col items-center sm:items-start animate-fade-in">
+                  <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500 uppercase whitespace-nowrap">
+                    {dailyStarsTitleInfo.title}
+                  </h2>
+                  <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.3em] mt-1">
+                    {dailyStarsTitleInfo.subtitle}
+                  </p>
                 </div>
-                <div className="flex items-center gap-4 bg-white/5 backdrop-blur-xl border border-white/10 p-3 rounded-2xl sm:rounded-3xl shadow-2xl group self-center sm:self-auto">
-                  <Calendar className="w-5 h-5 text-royal-gold ml-3 group-hover:scale-110 transition-transform" />
-                  <input 
-                    type="date" 
-                    value={dailyViewDate || ""}
-                    onChange={(e) => setDailyViewDate(e.target.value)}
-                    className="bg-transparent text-white font-black text-sm outline-none pr-6 py-2 uppercase tracking-widest cursor-pointer"
-                  />
-                </div>
+                {isAdmin && (
+                  <div className="flex items-center gap-4 bg-white/5 backdrop-blur-xl border border-white/10 p-3 rounded-2xl sm:rounded-3xl shadow-2xl group self-center sm:self-auto">
+                    <Calendar className="w-5 h-5 text-royal-gold ml-3 group-hover:scale-110 transition-transform" />
+                    <input 
+                      type="date" 
+                      value={dailyViewDate || ""}
+                      onChange={(e) => setDailyViewDate(e.target.value)}
+                      className="bg-transparent text-white font-black text-sm outline-none pr-6 py-2 uppercase tracking-widest cursor-pointer"
+                    />
+                  </div>
+                )}
               </div>
 
               {dailyLeaderboard.length > 0 ? (
@@ -1546,69 +1778,99 @@ function App() {
           )}
 
           {activeTab === "analytics" && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-              {/* Total Points Distribution */}
-              <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-[3rem] border border-white/10 shadow-3xl">
-                <div className="flex items-center gap-4 mb-10">
-                  <div className="bg-royal-gold/10 p-3 rounded-2xl border border-royal-gold/20">
-                    <BarChart3 className="w-6 h-6 text-royal-gold" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Performance Distribution</h3>
-                    <p className="text-lg font-black text-white tracking-tight">Top 10 Royal Students</p>
-                  </div>
+            <div className="space-y-10">
+              {/* Academic Year Selection Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 pb-6 border-b border-white/5 animate-fade-in">
+                <div>
+                  <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500 uppercase whitespace-nowrap">Academic Year Stats</h2>
+                  <p className="text-slate-500 text-[10px] sm:text-xs font-bold uppercase tracking-[0.3em] mt-1 text-center sm:text-left">
+                    Viewing {selectedAcademicYear === "all" ? "All-Time grand total" : `Academic Cycle ${selectedAcademicYear}`}
+                  </p>
                 </div>
-                <div className="h-[400px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={allTimeStats.slice(0, 10)}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#000', borderRadius: '2rem', border: '1px solid rgba(255,215,0,0.2)', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.8)' }}
-                        itemStyle={{ color: '#FFD700', fontWeight: 900 }}
-                        cursor={{ fill: 'rgba(255,255,255,0.03)' }}
-                      />
-                      <Bar dataKey="totalPoints" radius={[12, 12, 0, 0]}>
-                        {allTimeStats.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={index === 0 ? '#FFD700' : index === 1 ? '#cbd5e1' : index === 2 ? '#b45309' : '#334155'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                
+                <div className="flex items-center gap-4 bg-white/5 backdrop-blur-xl border border-white/10 p-2.5 rounded-2xl sm:rounded-3xl shadow-2xl self-center sm:self-auto">
+                  <span className="text-slate-400 font-bold text-xs uppercase tracking-widest pl-4">Year:</span>
+                  <select
+                    value={selectedAcademicYear}
+                    onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                    className="bg-transparent text-white font-black text-xs outline-none pr-8 py-2 uppercase tracking-widest cursor-pointer border-0 ring-0 focus:ring-0"
+                  >
+                    {academicYears.map((ay) => (
+                      <option key={ay} value={ay} className="bg-slate-950 text-white font-black uppercase tracking-widest">
+                        {ay}
+                      </option>
+                    ))}
+                    <option value="all" className="bg-slate-950 text-white font-black uppercase tracking-widest">
+                      Grand Total (All)
+                    </option>
+                  </select>
                 </div>
               </div>
 
-              {/* Daily Trends */}
-              <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-[3rem] border border-white/10 shadow-3xl">
-                <div className="flex items-center gap-4 mb-10">
-                  <div className="bg-emerald-500/10 p-3 rounded-2xl border border-emerald-500/20">
-                    <TrendingUp className="w-6 h-6 text-emerald-400" />
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                {/* Total Points Distribution */}
+                <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-[3rem] border border-white/10 shadow-3xl">
+                  <div className="flex items-center gap-4 mb-10">
+                    <div className="bg-royal-gold/10 p-3 rounded-2xl border border-royal-gold/20">
+                      <BarChart3 className="w-6 h-6 text-royal-gold" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Performance Distribution</h3>
+                      <p className="text-lg font-black text-white tracking-tight">Top 10 Royal Students</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Growth Insights</h3>
-                    <p className="text-lg font-black text-white tracking-tight">Recent Activity Trends</p>
+                  <div className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={allTimeStats.slice(0, 10)}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#000', borderRadius: '2rem', border: '1px solid rgba(255,215,0,0.2)', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.8)' }}
+                          itemStyle={{ color: '#FFD700', fontWeight: 900 }}
+                          cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                        />
+                        <Bar dataKey="totalPoints" radius={[12, 12, 0, 0]}>
+                          {allTimeStats.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={index === 0 ? '#FFD700' : index === 1 ? '#cbd5e1' : index === 2 ? '#b45309' : '#334155'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
-                <div className="h-[400px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={Array.from({ length: 7 }).map((_, i) => {
-                      const date = startOfDay(subDays(new Date(), 6 - i));
-                      const points = data.points
-                        .filter(p => isSameDay(safeParseISO(p.date), date))
-                        .reduce((sum, p) => sum + p.points, 0);
-                      return { date: format(date, "MMM dd"), points };
-                    })}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                      <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#000', borderRadius: '2rem', border: '1px solid rgba(16,185,129,0.2)', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.8)' }}
-                        itemStyle={{ color: '#10b981', fontWeight: 900 }}
-                      />
-                      <Line type="monotone" dataKey="points" stroke="#10b981" strokeWidth={4} dot={{ fill: '#10b981', r: 6, strokeWidth: 2, stroke: '#000' }} activeDot={{ r: 8, strokeWidth: 0 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+
+                {/* Daily Trends */}
+                <div className="bg-white/5 backdrop-blur-2xl p-10 rounded-[3rem] border border-white/10 shadow-3xl">
+                  <div className="flex items-center gap-4 mb-10">
+                    <div className="bg-emerald-500/10 p-3 rounded-2xl border border-emerald-500/20">
+                      <TrendingUp className="w-6 h-6 text-emerald-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.3em]">Growth Insights</h3>
+                      <p className="text-lg font-black text-white tracking-tight">Recent Activity Trends</p>
+                    </div>
+                  </div>
+                  <div className="h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={Array.from({ length: 7 }).map((_, i) => {
+                        const date = startOfDay(subDays(new Date(), 6 - i));
+                        const points = data.points
+                          .filter(p => isSameDay(safeParseISO(p.date), date))
+                          .reduce((sum, p) => sum + p.points, 0);
+                        return { date: format(date, "MMM dd"), points };
+                      })}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
+                        <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: '#000', borderRadius: '2rem', border: '1px solid rgba(16,185,129,0.2)', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.8)' }}
+                          itemStyle={{ color: '#10b981', fontWeight: 900 }}
+                        />
+                        <Line type="monotone" dataKey="points" stroke="#10b981" strokeWidth={4} dot={{ fill: '#10b981', r: 6, strokeWidth: 2, stroke: '#000' }} activeDot={{ r: 8, strokeWidth: 0 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3003,6 +3265,24 @@ function App() {
                     </div>
                     
                     <h2 className="text-xl sm:text-3xl font-black text-white tracking-tighter mb-0.5 sm:mb-2 uppercase">{student.name}</h2>
+                    
+                    <div className="mb-4 text-center">
+                      <select
+                        value={selectedAcademicYear}
+                        onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                        className="bg-black/30 backdrop-blur-xl text-royal-gold text-[8px] sm:text-[10px] font-black px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl uppercase tracking-widest border border-royal-gold/20 outline-none cursor-pointer"
+                      >
+                        {academicYears.map((ay) => (
+                          <option key={ay} value={ay} className="bg-slate-950 text-white font-black uppercase tracking-widest">
+                            Cycle {ay}
+                          </option>
+                        ))}
+                        <option value="all" className="bg-slate-950 text-white font-black uppercase tracking-widest">
+                          Grand Total (All)
+                        </option>
+                      </select>
+                    </div>
+
                     <div className="flex flex-wrap justify-center gap-2 mb-3 sm:mb-8">
                       {getBadge(student.totalPoints) && (
                         <span className="bg-white/10 text-royal-gold text-[7px] sm:text-[10px] font-black px-2.5 sm:px-4 py-1 sm:py-2 rounded-lg sm:rounded-xl uppercase tracking-widest border border-royal-gold/20 backdrop-blur-md">
