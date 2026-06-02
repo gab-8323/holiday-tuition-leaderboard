@@ -41,8 +41,10 @@ import {
   CheckCircle2,
   MoreHorizontal,
   ChevronLeft,
+  ChevronDown,
   Minus,
-  Loader2
+  Loader2,
+  FileText
 } from "lucide-react";
 import { 
   BarChart, 
@@ -89,6 +91,7 @@ interface Student {
   id: string;
   name: string;
   photo: string | null;
+  rollNumber?: string;
   createdAt: string;
 }
 
@@ -101,6 +104,14 @@ interface PointRecord {
   createdAt: string;
 }
 
+interface HomeworkTest {
+  id: string;
+  studentId: string;
+  date: string; // "yyyy-MM-dd"
+  questions: string;
+  createdAt?: string;
+}
+
 interface GalleryItem {
   id: string;
   url: string;
@@ -108,10 +119,17 @@ interface GalleryItem {
   createdAt: string;
 }
 
+interface AppSetting {
+  key: string;
+  value: string;
+}
+
 interface AppData {
   students: Student[];
   points: PointRecord[];
   gallery: GalleryItem[];
+  settings?: AppSetting[];
+  tests?: HomeworkTest[];
 }
 
 // Safe date formatter
@@ -124,6 +142,21 @@ const safeFormat = (dateStr: string | undefined | null, formatStr: string) => {
   } catch (e) {
     return "Invalid Date";
   }
+};
+
+// Auto-calculates the next sequential numeric roll number based on existing students
+const getNextRollNumber = (students: Student[] | undefined): string => {
+  if (!students || students.length === 0) return "10001";
+  const numericRolls = students
+    .map(s => s.rollNumber ? String(s.rollNumber).trim() : "")
+    .filter(val => /^\d+$/.test(val))
+    .map(val => parseInt(val, 10));
+
+  if (numericRolls.length > 0) {
+    const maxRoll = Math.max(...numericRolls);
+    return String(maxRoll + 1);
+  }
+  return "10001";
 };
 
 // Error Boundary Component
@@ -245,13 +278,40 @@ function getAcademicYearOfDate(dateStr: any): string {
 }
 
 function App() {
-  const [data, setData] = useState<AppData>({ students: [], points: [], gallery: [] });
+  const [data, setData] = useState<AppData>({ students: [], points: [], gallery: [], settings: [] });
+  
+  const dayTypesSetting = data.settings?.find(s => s.key === "day_types")?.value;
+  const dayTypes: Record<string, "Sunday" | "Holiday" | "Normal"> = useMemo(() => {
+    if (!dayTypesSetting) return {};
+    try {
+      return JSON.parse(dayTypesSetting);
+    } catch {
+      return {};
+    }
+  }, [dayTypesSetting]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [isSubmittingBid, setIsSubmittingBid] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [showLogin, setShowLogin] = useState(false);
-  const [activeTab, setActiveTab] = useState<"total" | "daily" | "admin" | "analytics" | "gallery" | "tender">("total");
+  const [activeTab, setActiveTab] = useState<"total" | "daily" | "admin" | "analytics" | "gallery" | "tender" | "attendance" | "tests">("total");
+  
+  // Student Tests input search & active session state
+  const [studentRollNumberInput, setStudentRollNumberInput] = useState("");
+  const [loggedInStudentRollNumber, setLoggedInStudentRollNumber] = useState<string>(() => {
+    try {
+      return localStorage.getItem("royal_student_roll_number") || "";
+    } catch {
+      return "";
+    }
+  });
+
+  // Admin Homework Assignment states
+  const [assignmentStudentId, setAssignmentStudentId] = useState("");
+  const [assignmentDate, setAssignmentDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [assignmentQuestions, setAssignmentQuestions] = useState("");
+  const [isAssigningHomework, setIsAssigningHomework] = useState(false);
+  const [testToDeleteKey, setTestToDeleteKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [showAddStudent, setShowAddStudent] = useState(false);
@@ -265,6 +325,9 @@ function App() {
   const [bulkPoints, setBulkPoints] = useState<Record<string, string>>({});
   const [dailyViewDate, setDailyViewDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [weeklyViewDate, setWeeklyViewDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [attendanceDate, setAttendanceDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const currentDayType = dayTypes[attendanceDate] || "Normal";
+  const [markingStudentId, setMarkingStudentId] = useState<string | null>(null);
 
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(() => {
     try {
@@ -586,6 +649,199 @@ function App() {
     }
   };
 
+  const handleMarkAttendance = async (studentId: string, date: string, status: "Present" | "Absent" | "Late" | null) => {
+    try {
+      setMarkingStudentId(studentId);
+      
+      let points = 5;
+      if (status === "Late") points = 5;
+      if (status === "Absent") points = 0;
+      
+      const response = await fetch("/api/attendance/mark", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          studentId,
+          date,
+          status,
+          points
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to register attendance on server.");
+      }
+      
+      await fetchData();
+    } catch (error: any) {
+      console.error("Marking attendance failed:", error);
+      alert(error.message || "An error occurred while marking attendance.");
+    } finally {
+      setMarkingStudentId(null);
+    }
+  };
+
+  const handleMarkAllPresent = async () => {
+    try {
+      setLoading(true);
+      const unmarkedStudents = data.students.filter(student => {
+        const record = data.points.find(p => 
+          p.studentId === student.id && 
+          p.date && p.date.startsWith(attendanceDate) && 
+          (p.description.startsWith("Attendance:") || p.description === "Attendance")
+        );
+        return !record;
+      });
+      
+      if (unmarkedStudents.length === 0) {
+        alert("All students are already marked for this date!");
+        return;
+      }
+      
+      const promises = unmarkedStudents.map(student => 
+        fetch("/api/attendance/mark", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId: student.id,
+            date: attendanceDate,
+            status: "Present",
+            points: 5
+          })
+        })
+      );
+      
+      await Promise.all(promises);
+      await fetchData();
+    } catch (error) {
+      console.error("Bulk marking present failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMarkAllAbsent = async () => {
+    try {
+      setLoading(true);
+      const unmarkedStudents = data.students.filter(student => {
+        const record = data.points.find(p => 
+          p.studentId === student.id && 
+          p.date && p.date.startsWith(attendanceDate) && 
+          (p.description.startsWith("Attendance:") || p.description === "Attendance")
+        );
+        return !record;
+      });
+      
+      if (unmarkedStudents.length === 0) {
+        alert("All students are already marked for this date!");
+        return;
+      }
+      
+      const promises = unmarkedStudents.map(student => 
+        fetch("/api/attendance/mark", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId: student.id,
+            date: attendanceDate,
+            status: "Absent",
+            points: 0
+          })
+        })
+      );
+      
+      await Promise.all(promises);
+      await fetchData();
+    } catch (error) {
+      console.error("Bulk marking absent failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetDayType = async (type: "Normal" | "Sunday" | "Holiday") => {
+    try {
+      setLoading(true);
+      
+      // 1. If transitioning to Sunday or Holiday, clear all existing student attendance records on that date
+      if (type === "Sunday" || type === "Holiday") {
+        const attendanceRecords = data.points.filter(p => 
+          p.date && p.date.startsWith(attendanceDate) && 
+          (p.description.startsWith("Attendance:") || p.description === "Attendance")
+        );
+        
+        if (attendanceRecords.length > 0) {
+          const promises = attendanceRecords.map(record => 
+            fetch("/api/attendance/mark", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                studentId: record.studentId,
+                date: attendanceDate,
+                status: null
+              })
+            })
+          );
+          await Promise.all(promises);
+        }
+      }
+      
+      // 2. Save the updated day types to settings
+      const updatedDayTypes = { ...dayTypes, [attendanceDate]: type };
+      const response = await fetch("/api/settings/upsert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: "day_types",
+          value: JSON.stringify(updatedDayTypes)
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to update day types settings on server.");
+      }
+      
+      await fetchData();
+    } catch (error: any) {
+      console.error("Failed to set day type:", error);
+      alert(error.message || "An error occurred while setting the day type.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearAttendance = async () => {
+    if (!confirm("Are you sure you want to clear the register for this date?")) return;
+    try {
+      setLoading(true);
+      const attendanceRecords = data.points.filter(p => 
+        p.date && p.date.startsWith(attendanceDate) && 
+        (p.description.startsWith("Attendance:") || p.description === "Attendance")
+      );
+      
+      const promises = attendanceRecords.map(record => 
+        fetch("/api/attendance/mark", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            studentId: record.studentId,
+            date: attendanceDate,
+            status: null
+          })
+        })
+      );
+      
+      await Promise.all(promises);
+      await fetchData();
+    } catch (error) {
+      console.error("Clearing register failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleDeleteGallery = async (id: string) => {
     if (!confirm("Delete this photo from gallery?")) return;
     try {
@@ -855,10 +1111,35 @@ function App() {
         .filter(p => p.studentId === student.id && isSameDay(safeParseISO(p.date), today))
         .reduce((sum, p) => sum + p.points, 0);
       
+      let presentCount = 0;
+      let absentCount = 0;
+      let lateCount = 0;
+      
+      points.forEach(p => {
+        const desc = p.description || "";
+        if (desc === "Attendance: Present" || desc === "Attendance") {
+          presentCount++;
+        } else if (desc === "Attendance: Absent") {
+          absentCount++;
+        } else if (desc === "Attendance: Late") {
+          lateCount++;
+        }
+      });
+      
+      const totalDaysMarked = presentCount + absentCount + lateCount;
+      const attendanceRate = totalDaysMarked > 0 
+        ? Math.round(((presentCount + lateCount) / totalDaysMarked) * 100) 
+        : 100;
+      
       return {
         ...student,
         totalPoints,
         dailyPoints,
+        presentCount,
+        absentCount,
+        lateCount,
+        totalDaysMarked,
+        attendanceRate,
         allTimePoints: totalPoints, // In all-time stats, totalPoints IS allTimePoints
         history: points.sort((a, b) => safeParseISO(b.date).getTime() - safeParseISO(a.date).getTime())
       };
@@ -1325,9 +1606,13 @@ function App() {
           {[
             { id: "total", label: "HALL OF FAME", icon: Award },
             { id: "daily", label: "DAILY STARS", icon: Sparkles },
+            ...(isAdmin ? [
+              { id: "attendance", label: "ATTENDANCE", icon: CheckCircle2 }
+            ] : []),
             { id: "gallery", label: "GALLERY", icon: ImageIcon },
             { id: "analytics", label: "INSIGHTS", icon: BarChart3 },
             { id: "tender", label: "TENDER", icon: Gavel },
+            { id: "tests", label: "TESTS", icon: FileText },
             ...(isAdmin ? [
               { id: "admin", label: "ROSTER", icon: Users }
             ] : [])
@@ -1905,7 +2190,7 @@ function App() {
                     whileHover={{ y: -10 }}
                     className="group bg-white/5 backdrop-blur-2xl border border-white/10 p-8 rounded-[3rem] hover:border-white/20 transition-all shadow-2xl relative overflow-hidden"
                   >
-                    <div className="absolute top-0 right-0 p-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                    <div className="absolute top-0 right-0 p-4 sm:p-6 flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity z-20">
                       <button 
                         onClick={() => setEditingStudent(student)}
                         className="p-3 bg-white/10 rounded-2xl text-white hover:bg-royal-gold hover:text-black transition-all shadow-xl backdrop-blur-md"
@@ -2038,6 +2323,403 @@ function App() {
                   <p className="text-slate-500 font-black text-2xl uppercase tracking-[0.3em]">The gallery is currently empty</p>
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === "attendance" && isAdmin && (
+            <div className="space-y-10 animate-fade-in text-left">
+              {/* Header */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-white/5">
+                <div className="flex flex-col items-center md:items-start text-center md:text-left">
+                  <h2 className="text-2.5xl sm:text-4xl font-black text-white tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-500 uppercase whitespace-nowrap">
+                    Attendance Register
+                  </h2>
+                  <p className="text-slate-500 text-[10px] sm:text-sm font-bold uppercase tracking-[0.3em] mt-1">
+                    Daily Enrollment Verification & Metrics
+                  </p>
+                </div>
+                   <div className="flex flex-col sm:flex-row items-center justify-center gap-3 self-center">
+                  {/* Date Selection Control */}
+                  <div className="flex items-center justify-center gap-2 bg-white/5 backdrop-blur-xl p-2 rounded-2xl border border-white/10 shadow-xl">
+                    <button 
+                      onClick={() => {
+                        const prevDay = format(subDays(parseISO(attendanceDate), 1), "yyyy-MM-dd");
+                        setAttendanceDate(prevDay);
+                      }}
+                      className="p-2 sm:p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 active:scale-95 transition-all text-slate-300 hover:text-white"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    
+                    <div className="flex items-center gap-2 px-3">
+                      <Calendar className="w-4 h-4 text-royal-gold" />
+                      <input 
+                        type="date" 
+                        value={attendanceDate}
+                        onChange={(e) => setAttendanceDate(e.target.value)}
+                        className="bg-transparent text-white font-black text-xs sm:text-sm uppercase tracking-widest outline-none cursor-pointer border-0"
+                      />
+                    </div>
+                    
+                    <button 
+                      onClick={() => {
+                        const nextDay = format(addDays(parseISO(attendanceDate), 1), "yyyy-MM-dd");
+                        setAttendanceDate(nextDay);
+                      }}
+                      className="p-2 sm:p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 active:scale-95 transition-all text-slate-300 hover:text-white"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Day Type Toggle (Admin Only) */}
+                  {isAdmin && (
+                    <div className="flex items-center gap-1.5 bg-white/5 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 shadow-lg">
+                      <button
+                        onClick={() => handleSetDayType("Normal")}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all border",
+                          currentDayType === "Normal" 
+                            ? "bg-royal-gold/15 text-royal-gold border-royal-gold/20" 
+                            : "bg-transparent text-slate-400 border-transparent hover:text-white"
+                        )}
+                      >
+                        📅 Class Day
+                      </button>
+                      <button
+                        onClick={() => handleSetDayType("Sunday")}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all border",
+                          currentDayType === "Sunday" 
+                            ? "bg-amber-500/15 text-amber-400 border-amber-500/20" 
+                            : "bg-transparent text-slate-400 border-transparent hover:text-amber-500/85"
+                        )}
+                      >
+                        ☀️ Sunday
+                      </button>
+                      <button
+                        onClick={() => handleSetDayType("Holiday")}
+                        className={cn(
+                          "px-3 py-1.5 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-wider transition-all border",
+                          currentDayType === "Holiday" 
+                            ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/20" 
+                            : "bg-transparent text-slate-400 border-transparent hover:text-cyan-500/85"
+                        )}
+                      >
+                        🌴 Holiday
+                      </button>
+                    </div>
+                  )}
+
+                  {!isAdmin && currentDayType !== "Normal" && (
+                    <span className={cn(
+                      "px-4 py-2.5 rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest border border-white/10 backdrop-blur-md",
+                      currentDayType === "Sunday" ? "text-amber-400 bg-amber-500/10 border-amber-500/20" : "text-cyan-400 bg-cyan-500/10 border-cyan-500/20"
+                    )}>
+                      {currentDayType === "Sunday" ? "☀️ Sunday (Rest)" : "🌴 Holiday (No School)"}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Bento Row Metrics */}
+              {(() => {
+                const totalStudents = data.students.length;
+                let present = 0;
+                let late = 0;
+                let absent = 0;
+                
+                const attendanceData = data.students.map(student => {
+                  const record = data.points.find(p => 
+                    p.studentId === student.id && 
+                    p.date && p.date.startsWith(attendanceDate) && 
+                    (p.description.startsWith("Attendance:") || p.description === "Attendance")
+                  );
+                  let status: "Present" | "Absent" | "Late" | "Unmarked" = "Unmarked";
+                  if (record) {
+                    if (record.description === "Attendance: Present" || record.description === "Attendance") {
+                      status = "Present";
+                      present++;
+                    } else if (record.description === "Attendance: Late") {
+                      status = "Late";
+                      late++;
+                    } else if (record.description === "Attendance: Absent") {
+                      status = "Absent";
+                      absent++;
+                    }
+                  }
+                  return { student, status };
+                });
+                
+                const unmarked = totalStudents - present - late - absent;
+                const dailyRate = (present + late + absent) > 0 
+                  ? Math.round(((present + late) / (present + late + absent)) * 100) 
+                  : 100;
+
+                return (
+                  <div className="space-y-8">
+                    {/* Metrics Cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      <div className="bg-white/5 border border-white/10 backdrop-blur-xl p-5 rounded-[2rem] text-center shadow-xl">
+                        <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Daily Attendance</span>
+                        <span className="block text-2xl font-black text-royal-gold font-mono">{dailyRate}%</span>
+                      </div>
+                      
+                      <div className="bg-emerald-500/5 border border-emerald-500/15 backdrop-blur-xl p-5 rounded-[2rem] text-center shadow-xl">
+                        <span className="block text-[8px] font-black text-emerald-400 uppercase tracking-widest mb-1.5 flex items-center justify-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Present (+5)
+                        </span>
+                        <span className="block text-2xl font-black text-emerald-400 font-mono">{present}</span>
+                      </div>
+
+                      <div className="bg-amber-500/5 border border-amber-500/15 backdrop-blur-xl p-5 rounded-[2rem] text-center shadow-xl">
+                        <span className="block text-[8px] font-black text-amber-400 uppercase tracking-widest mb-1.5 flex items-center justify-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Late (+5)
+                        </span>
+                        <span className="block text-2xl font-black text-amber-400 font-mono">{late}</span>
+                      </div>
+
+                      <div className="bg-red-500/5 border border-red-500/15 backdrop-blur-xl p-5 rounded-[2rem] text-center shadow-xl">
+                        <span className="block text-[8px] font-black text-red-400 uppercase tracking-widest mb-1.5 flex items-center justify-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-400" /> Absent (0)
+                        </span>
+                        <span className="block text-2xl font-black text-red-400 font-mono">{absent}</span>
+                      </div>
+
+                      <div className="bg-white/5 border border-white/10 backdrop-blur-xl p-5 rounded-[2rem] text-center shadow-xl col-span-2 md:col-span-1">
+                        <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5 flex items-center justify-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" /> Unmarked
+                        </span>
+                        <span className="block text-2xl font-black text-slate-300 font-mono">{unmarked}</span>
+                      </div>
+                    </div>
+
+                    {currentDayType !== "Normal" ? (
+                      <div className="bg-white/5 backdrop-blur-xl rounded-[2.5rem] border border-white/10 p-16 text-center flex flex-col items-center justify-center gap-5 shadow-3xl text-left">
+                        <div className={cn(
+                          "w-20 h-20 rounded-[2rem] flex items-center justify-center text-4xl shadow-2xl border",
+                          currentDayType === "Sunday" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
+                        )}>
+                          {currentDayType === "Sunday" ? "☀️" : "🎉"}
+                        </div>
+                        <div className="max-w-md mx-auto text-center">
+                          <h3 className="font-black text-white text-xl uppercase tracking-wider">
+                            {currentDayType === "Sunday" ? "Sunday - Rest Day" : "Tuition Holiday"}
+                          </h3>
+                          <p className="text-slate-400 text-xs font-bold uppercase tracking-[0.15em] mt-2 leading-relaxed">
+                            This date is registered as a {currentDayType === "Sunday" ? "Sunday" : "Holiday"}. No school session is scheduled. Attendance is not counted and this day is excluded from student working days.
+                          </p>
+                        </div>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleSetDayType("Normal")}
+                            className="mt-3 px-6 py-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/5 text-white text-xs font-black uppercase tracking-widest active:scale-95 transition-all shadow-md"
+                          >
+                            Restore to Class Day
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <>
+                        {/* Students Register List */}
+                        <div className="bg-white/5 backdrop-blur-xl rounded-[2.5rem] border border-white/10 shadow-3xl overflow-hidden">
+                      <div className="px-6 sm:px-10 py-5 bg-white/5 border-b border-white/5 flex items-center justify-between text-[10px] font-black text-slate-500 uppercase tracking-[0.3em]">
+                        <span>Student Profile</span>
+                        <span className="hidden md:block">Marking Actions Register</span>
+                      </div>
+                      
+                      <div className="divide-y divide-white/5">
+                        {attendanceData.map(({ student, status }) => {
+                          const detailedStudent = allTimeStats.find(s => s.id === student.id) || student;
+                          const statsLabel = `Present: ${(detailedStudent as any).presentCount || 0}d | Late: ${(detailedStudent as any).lateCount || 0}d | Absent: ${(detailedStudent as any).absentCount || 0}d`;
+                          
+                          return (
+                            <div key={student.id} className="px-6 sm:px-10 py-5 sm:py-6 flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6 hover:bg-white/5 transition-all group">
+                              {/* Left Side: Avatar + Details */}
+                              <div className="flex items-center gap-4">
+                                <div className="relative">
+                                  <div className="w-12 h-12 rounded-xl overflow-hidden border border-white/10 bg-slate-900 flex-shrink-0 cursor-pointer" onClick={() => setSelectedStudentId(student.id)}>
+                                    {student.photo ? (
+                                      <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center text-slate-700">
+                                        <Users className="w-5 h-5" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  {/* Status indicator pill on avatar corner */}
+                                  <span className={cn(
+                                    "absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-slate-950",
+                                    status === "Present" ? "bg-emerald-400" :
+                                    status === "Late" ? "bg-amber-400" :
+                                    status === "Absent" ? "bg-red-400" : "bg-slate-600 animate-pulse"
+                                  )} />
+                                </div>
+                                <div className="text-left cursor-pointer" onClick={() => setSelectedStudentId(student.id)}>
+                                  <div className="flex items-center gap-2">
+                                    <h4 className="font-black text-white text-base uppercase tracking-tight group-hover:text-royal-gold transition-colors">
+                                      {student.name}
+                                    </h4>
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-black font-mono tracking-tight">
+                                      {(detailedStudent as any).attendanceRate}% Rate
+                                    </span>
+                                  </div>
+                                  <p className="text-slate-500 text-[9px] sm:text-[10px] font-bold uppercase tracking-widest mt-0.5">
+                                    {statsLabel}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Right Side: Marking Options or Badges */}
+                              <div className="flex items-center">
+                                {markingStudentId === student.id ? (
+                                  <div className="flex items-center justify-center gap-2 text-slate-500 text-xs font-black uppercase tracking-widest min-h-[44px]">
+                                    <Loader2 className="w-4 h-4 animate-spin text-royal-gold" />
+                                    <span>Registering...</span>
+                                  </div>
+                                ) : isAdmin ? (
+                                  <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full md:w-auto justify-end">
+                                    {/* Present Button -> Shown when status is Unmarked or Present */}
+                                    {(status === "Unmarked" || status === "Present") && (
+                                      <button
+                                        onClick={() => handleMarkAttendance(student.id, attendanceDate, "Present")}
+                                        className={cn(
+                                          "px-2 sm:px-4 py-2 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest border transition-all active:scale-95 flex items-center justify-center gap-1.5 min-w-[70px] sm:min-w-[85px]",
+                                          status === "Present" 
+                                            ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.15)]" 
+                                            : "bg-white/5 text-slate-400 border-white/5 hover:text-emerald-400 hover:bg-emerald-500/5 hover:border-emerald-500/10"
+                                        )}
+                                      >
+                                        Present
+                                      </button>
+                                    )}
+                                    
+                                    {/* Late Button -> Shown when status is Unmarked or Late */}
+                                    {(status === "Unmarked" || status === "Late") && (
+                                      <button
+                                        onClick={() => handleMarkAttendance(student.id, attendanceDate, "Late")}
+                                        className={cn(
+                                          "px-2 sm:px-4 py-2 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest border transition-all active:scale-95 flex items-center justify-center gap-1.5 min-w-[70px] sm:min-w-[85px]",
+                                          status === "Late" 
+                                            ? "bg-amber-500/20 text-amber-400 border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.15)]" 
+                                            : "bg-white/5 text-slate-400 border-white/5 hover:text-amber-400 hover:bg-amber-500/5 hover:border-amber-500/10"
+                                        )}
+                                      >
+                                        Late
+                                      </button>
+                                    )}
+
+                                    {/* Absent Button -> Shown when status is Unmarked or Absent */}
+                                    {(status === "Unmarked" || status === "Absent") && (
+                                      <button
+                                        onClick={() => handleMarkAttendance(student.id, attendanceDate, "Absent")}
+                                        className={cn(
+                                          "px-2 sm:px-4 py-2 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest border transition-all active:scale-95 flex items-center justify-center gap-1.5 min-w-[70px] sm:min-w-[85px]",
+                                          status === "Absent" 
+                                            ? "bg-red-500/20 text-red-400 border-red-500/40 shadow-[0_0_15px_rgba(239,68,68,0.15)]" 
+                                            : "bg-white/5 text-slate-400 border-white/5 hover:text-red-400 hover:bg-red-500/5 hover:border-red-500/10"
+                                        )}
+                                      >
+                                        Absent
+                                      </button>
+                                    )}
+
+                                    {/* Clear/Reset Button -> Only shown when marked (not Unmarked) */}
+                                    {status !== "Unmarked" && (
+                                      <button
+                                        onClick={() => handleMarkAttendance(student.id, attendanceDate, null)}
+                                        className={cn(
+                                          "px-2 sm:px-4 py-2 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest border transition-all active:scale-95 flex items-center justify-center gap-1.5 min-w-[70px] sm:min-w-[85px]",
+                                          "bg-red-500/15 text-red-400 border-red-500/25 hover:bg-red-500/25 hover:text-red-300"
+                                        )}
+                                        title="Unmark / Clear Student Status"
+                                      >
+                                        Clear
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  /* Passive Badge for students */
+                                  <div className="min-h-[44px] flex items-center md:justify-end">
+                                    {status === "Present" && (
+                                      <span className="px-4 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /> Present (+5)
+                                      </span>
+                                    )}
+                                    {status === "Late" && (
+                                      <span className="px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Late (+5)
+                                      </span>
+                                    )}
+                                    {status === "Absent" && (
+                                      <span className="px-4 py-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-red-400" /> Absent (0)
+                                      </span>
+                                    )}
+                                    {status === "Unmarked" && (
+                                      <span className="px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-500 text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-500 animate-pulse" /> Unmarked
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Admin Registers Batch Tools (Collapsible / Hidden by default at the end) */}
+                    {isAdmin && (
+                      <div className="mt-8">
+                        <details className="group bg-white/5 backdrop-blur-md rounded-[2rem] border border-white/10 hover:border-white/20 transition-all [&_summary::-webkit-details-marker]:hidden">
+                          <summary className="flex items-center justify-between p-6 cursor-pointer select-none">
+                            <div className="flex items-center gap-3">
+                              <span className="text-royal-gold text-lg">⚙️</span>
+                              <div className="text-left">
+                                <h4 className="font-black text-white text-xs sm:text-sm uppercase tracking-wider">Advanced Class Registers Tooling</h4>
+                                <p className="text-slate-500 text-[9px] font-bold uppercase tracking-widest mt-0.5">Click to expand or collapse batch operations</p>
+                              </div>
+                            </div>
+                            <span className="transition-transform duration-300 group-open:-rotate-180">
+                              <ChevronDown className="w-5 h-5 text-slate-400 group-hover:text-white" />
+                            </span>
+                          </summary>
+                          <div className="p-6 sm:p-8 border-t border-white/5 bg-black/20 rounded-b-[2rem] flex flex-col md:flex-row gap-6 items-center justify-between">
+                            <div className="text-center md:text-left">
+                              <h5 className="font-black text-white text-xs sm:text-sm uppercase tracking-wider">Class Management Registers</h5>
+                              <p className="text-slate-500 text-[9px] font-bold uppercase tracking-widest mt-1">Quickly complete registration workflow for today</p>
+                            </div>
+                            <div className="flex flex-wrap gap-3 w-full md:w-auto justify-center md:justify-end">
+                              <button
+                                onClick={handleMarkAllPresent}
+                                className="px-6 py-3 rounded-xl royal-gradient-gold text-black text-xs font-black uppercase tracking-widest active:scale-95 transition-all shadow-lg hover:shadow-royal-gold/10"
+                              >
+                                Mark Unmarked Present
+                              </button>
+                              <button
+                                onClick={handleMarkAllAbsent}
+                                className="px-6 py-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/25 text-amber-400 hover:text-amber-300 border border-amber-500/20 text-xs font-black uppercase tracking-widest active:scale-95 transition-all"
+                              >
+                                Mark Unmarked Absent
+                              </button>
+                              <button
+                                onClick={handleClearAttendance}
+                                className="px-6 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 text-xs font-black uppercase tracking-widest active:scale-95 transition-all"
+                              >
+                                Reset Register
+                              </button>
+                            </div>
+                          </div>
+                        </details>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+                );
+              })()}
             </div>
           )}
 
@@ -3216,6 +3898,459 @@ function App() {
               )}
             </div>
           )}
+
+          {activeTab === "tests" && (
+            <div className="space-y-8 sm:space-y-12 animate-fade-in">
+              <div className="text-center max-w-2xl mx-auto space-y-4 mb-10">
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-royal-gold/10 border border-royal-gold/20 rounded-full">
+                  <FileText className="w-4 h-4 text-royal-gold" />
+                  <span className="text-[10px] font-black text-royal-gold uppercase tracking-[0.2em]">Homework & Tests Portal</span>
+                </div>
+                <h1 className="text-4xl sm:text-5xl font-black text-white tracking-tight uppercase leading-none">
+                  ROYAL TESTING CHAMBER
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-400 font-bold uppercase tracking-wider">
+                  Weekly custom homework questions & end-of-week test schedules.
+                </p>
+              </div>
+
+              {/* Admin controls for Homework and Test assignments */}
+              {isAdmin ? (
+                <div className="space-y-10">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                    {/* Left Panel: Assign Form */}
+                    <div className="lg:col-span-5 bg-slate-950 p-8 sm:p-10 border border-white/10 rounded-[2.5rem] shadow-2xl relative overflow-hidden">
+                      <div className="absolute -top-20 -right-20 w-40 h-40 bg-royal-gold/5 blur-[50px] rounded-full" />
+                      <h2 className="text-2xl font-black text-white uppercase tracking-tight mb-8 relative z-10 flex items-center gap-3">
+                        <Sparkles className="w-6 h-6 text-royal-gold" />
+                        Assign Homework
+                      </h2>
+
+                      <form 
+                        onSubmit={async (e) => {
+                          e.preventDefault();
+                          if (!assignmentStudentId) {
+                            alert("Please select a student");
+                            return;
+                          }
+                          if (!assignmentQuestions.trim()) {
+                            alert("Please enter some homework questions");
+                            return;
+                          }
+                          setIsAssigningHomework(true);
+                          try {
+                            const res = await fetch("/api/tests", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                studentId: assignmentStudentId,
+                                date: assignmentDate,
+                                questions: assignmentQuestions.trim()
+                              })
+                            });
+                            if (res.ok) {
+                              setAssignmentQuestions("");
+                              await fetchData();
+                            } else {
+                              alert("Failed to assign homework");
+                            }
+                          } catch (err) {
+                            console.error(err);
+                          } finally {
+                            setIsAssigningHomework(false);
+                          }
+                        }}
+                        className="space-y-6 relative z-10"
+                      >
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-1 font-mono">Select Student</label>
+                          <select 
+                            value={assignmentStudentId}
+                            onChange={(e) => setAssignmentStudentId(e.target.value)}
+                            required
+                            className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-black text-xs uppercase tracking-wider focus:ring-2 focus:ring-royal-gold appearance-none"
+                          >
+                            <option value="" className="bg-slate-950 text-slate-500">-- Choose Royal Student --</option>
+                            {data.students.map((student) => (
+                              <option key={student.id} value={student.id} className="bg-slate-950 text-white">
+                                {student.name} {student.rollNumber ? `(Roll: ${student.rollNumber})` : "(No Roll Number)"}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-1 font-mono">Assignment Date</label>
+                          <input 
+                            type="date"
+                            value={assignmentDate}
+                            onChange={(e) => setAssignmentDate(e.target.value)}
+                            required
+                            className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-black text-xs uppercase tracking-wider focus:ring-2 focus:ring-royal-gold"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] ml-1 font-mono">Homework Text / Questions</label>
+                          <textarea 
+                            value={assignmentQuestions}
+                            onChange={(e) => setAssignmentQuestions(e.target.value)}
+                            required
+                            placeholder="Assign customized math drills, reading tests, spelling lists, or focus topics..."
+                            rows={5}
+                            className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl outline-none text-white font-bold text-xs leading-relaxed focus:ring-2 focus:ring-royal-gold placeholder:text-slate-800"
+                          />
+                        </div>
+
+                        <button 
+                          type="submit"
+                          disabled={isAssigningHomework}
+                          className="w-full py-5 bg-royal-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:scale-[1.01] transition-all disabled:opacity-50 text-center block w-full"
+                        >
+                          {isAssigningHomework ? "Assigning..." : "Publish Homework Entry"}
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Right Panel: Lists of active week homework */}
+                    <div className="lg:col-span-7 space-y-6">
+                      <div className="bg-slate-950 p-8 sm:p-10 border border-white/10 rounded-[2.5rem] shadow-2xl animate-fade-in">
+                        <div className="flex items-center justify-between mb-8 pb-4 border-b border-white/5">
+                          <h2 className="text-xl font-black text-white uppercase tracking-tight flex items-center gap-3">
+                            <Clock className="w-5 h-5 text-royal-gold" />
+                            Assignments This Week
+                          </h2>
+                          <span className="text-[8px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-4 py-2 rounded-full border border-white/5">
+                            {format(startOfWeek(new Date(), { weekStartsOn: 1 }), "MMM dd")} - {format(endOfWeek(new Date(), { weekStartsOn: 1 }), "MMM dd")}
+                          </span>
+                        </div>
+
+                        {/* Filtered current week tests */}
+                        {(() => {
+                          const today = new Date();
+                          const start = startOfWeek(today, { weekStartsOn: 1 });
+                          const end = endOfWeek(today, { weekStartsOn: 1 });
+                          const activeTests = (data.tests || []).filter((t: HomeworkTest) => {
+                            try {
+                              const testDate = parseISO(t.date);
+                              return isWithinInterval(testDate, { start, end });
+                            } catch {
+                              return false;
+                            }
+                          });
+
+                          if (activeTests.length === 0) {
+                            return (
+                              <div className="py-20 text-center text-slate-700 font-bold uppercase text-xs tracking-widest space-y-4">
+                                <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-center mx-auto text-slate-850">
+                                  <FileText className="w-8 h-8 opacity-35 animate-pulse" />
+                                </div>
+                                <p>No homework assignments found for this week.</p>
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 no-scrollbar">
+                              {activeTests.map((test: HomeworkTest) => {
+                                const stud = data.students.find(s => s.id === test.studentId);
+                                return (
+                                  <div key={test.id} className="p-5 bg-white/5 border border-white/5 rounded-2xl flex items-start gap-4 hover:bg-white/10 hover:border-white/10 transition-all group">
+                                    <div className="w-10 h-10 rounded-xl bg-royal-gold/10 flex items-center justify-center border border-royal-gold/20 font-black text-xs text-royal-gold flex-shrink-0 font-mono">
+                                      {stud?.name ? stud.name.slice(0, 2).toUpperCase() : "??"}
+                                    </div>
+                                    <div className="flex-1 min-w-0 space-y-2">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div>
+                                          <p className="text-[11px] sm:text-xs font-black text-white uppercase tracking-wide truncate">
+                                            {stud?.name || "Unknown Student"}
+                                          </p>
+                                          <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">
+                                            Roll Number: {stud?.rollNumber || "Unassigned"}
+                                          </p>
+                                        </div>
+                                        <span className="text-[9px] font-black text-royal-gold uppercase tracking-widest bg-royal-gold/10 px-2.5 py-1 rounded-md">
+                                          {safeFormat(test.date, "EEEE")}
+                                        </span>
+                                      </div>
+                                      
+                                      <p className="text-[10px] sm:text-xs text-slate-300 font-medium whitespace-pre-wrap leading-relaxed py-1">
+                                        {test.questions}
+                                      </p>
+                                    </div>
+
+                                    {/* Delete Button */}
+                                    {(() => {
+                                      const uniqueKey = test.id || `${test.studentId}-${test.date}`;
+                                      const isConfirming = testToDeleteKey === uniqueKey;
+                                      
+                                      if (isConfirming) {
+                                        return (
+                                          <div className="flex items-center gap-2 bg-red-955/40 border border-red-900/30 px-3 py-1.5 rounded-xl animate-fade-in flex-shrink-0 relative z-20">
+                                            <span className="text-[9px] font-black text-red-400 uppercase tracking-widest font-mono">Delete?</span>
+                                            <button
+                                              onClick={async (e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                console.log("[TESTS] Attempting to delete homework (confirmed):", test);
+                                                try {
+                                                  const testId = test.id || "legacy";
+                                                  const qParams = new URLSearchParams({
+                                                    studentId: test.studentId || "",
+                                                    date: test.date || ""
+                                                  });
+                                                  const res = await fetch(`/api/tests/${testId}?${qParams.toString()}`, { method: "DELETE" });
+                                                  if (res.ok) {
+                                                    console.log("[TESTS] Successfully deleted homework, fetching fresh data...");
+                                                    setTestToDeleteKey(null);
+                                                    await fetchData();
+                                                  } else {
+                                                    const errText = await res.text();
+                                                    console.error("[TESTS] Delete request returned error response:", errText);
+                                                    alert(`Failed to delete homework: ${errText}`);
+                                                  }
+                                                } catch (err: any) {
+                                                  console.error("[TESTS] Error from delete fetch API:", err);
+                                                  alert(`Error: ${err.message || String(err)}`);
+                                                }
+                                              }}
+                                              className="text-[9px] font-black text-white hover:text-red-400 bg-red-650/20 hover:bg-red-600/40 px-2 py-1 rounded-md uppercase tracking-tight transition-all cursor-pointer"
+                                            >
+                                              Confirm
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setTestToDeleteKey(null);
+                                              }}
+                                              className="text-[9px] font-black text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 px-2 py-1 rounded-md uppercase tracking-tight transition-all cursor-pointer"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </div>
+                                        );
+                                      }
+
+                                      return (
+                                        <button 
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setTestToDeleteKey(uniqueKey);
+                                          }}
+                                          className="p-2 text-slate-500 hover:text-red-400 opacity-80 hover:opacity-100 transition-all cursor-pointer relative z-10"
+                                          title="Delete Homework"
+                                        >
+                                          <Trash2 className="w-4 h-4 pointer-events-none" />
+                                        </button>
+                                      );
+                                    })()}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* General Student Homework View Panel */}
+              <div className="max-w-2xl mx-auto">
+                {!loggedInStudentRollNumber ? (
+                  /* Entry Gate Card */
+                  <div className="bg-slate-950 p-8 sm:p-12 border border-white/10 rounded-[3rem] shadow-3xl relative overflow-hidden text-center space-y-8 animate-fade-in">
+                    <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-royal-gold to-transparent" />
+                    
+                    <div className="w-20 h-20 rounded-3xl bg-royal-gold/5 border border-royal-gold/20 flex items-center justify-center mx-auto text-royal-gold">
+                      <Lock className="w-10 h-10" />
+                    </div>
+
+                    <div className="space-y-3">
+                      <h3 className="text-2xl font-black text-white uppercase tracking-tight">ROLL NUMBER ACCESS</h3>
+                      <p className="text-[10px] sm:text-xs text-slate-500 font-black uppercase tracking-widest max-w-md mx-auto leading-loose">
+                        Please unlock this chamber by submitting your royal 5 or 6 digit student roll number to view your customized homework for the week.
+                      </p>
+                    </div>
+
+                    {/* Input fields */}
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const input = studentRollNumberInput.trim();
+                        if (!input) return;
+
+                        // Search for student under data.students with rollNumber matching input
+                        const found = data.students.find(s => s.rollNumber?.trim() === input);
+                        if (found) {
+                          setLoggedInStudentRollNumber(input);
+                          try {
+                            localStorage.setItem("royal_student_roll_number", input);
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        } else {
+                          alert("Verify your Roll Number again. No matched profile found in Academy.");
+                        }
+                      }}
+                      className="space-y-4 max-w-sm mx-auto"
+                    >
+                      <input 
+                        type="text"
+                        required
+                        value={studentRollNumberInput}
+                        onChange={(e) => setStudentRollNumberInput(e.target.value)}
+                        placeholder="ENTER 5 OR 6 DIGIT ROLL NUMBER"
+                        className="w-full text-center px-6 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-[0.2em] placeholder:text-slate-800"
+                      />
+                      <button 
+                        type="submit"
+                        className="w-full py-5 royal-gradient-gold text-black rounded-2xl font-black text-xs uppercase tracking-[0.3em] shadow-2xl shadow-royal-gold/10 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                      >
+                        Unlock Homework Gateway
+                      </button>
+                    </form>
+                  </div>
+                ) : (
+                  /* Homework Display Screen */
+                  (() => {
+                    const matchedStudent = data.students.find(
+                      s => s.rollNumber?.trim() === loggedInStudentRollNumber.trim()
+                    );
+
+                    if (!matchedStudent) {
+                      // Dangling state, student might have been altered
+                      return (
+                        <div className="text-center bg-slate-950 p-12 border border-white/15 rounded-3xl space-y-6">
+                          <p className="text-white uppercase font-black tracking-widest text-xs">Login state out of sync.</p>
+                          <button 
+                            onClick={() => {
+                              setLoggedInStudentRollNumber("");
+                              localStorage.removeItem("royal_student_roll_number");
+                            }}
+                            className="px-6 py-3 bg-red-500/20 text-red-400 hover:bg-red-500/35 border border-red-500/30 rounded-xl font-bold uppercase text-xs"
+                          >
+                            Reset Roll Entrance
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // Load current week tests for this single matched student
+                    const today = new Date();
+                    const start = startOfWeek(today, { weekStartsOn: 1 });
+                    const end = endOfWeek(today, { weekStartsOn: 1 });
+                    
+                    const matchedTests = (data.tests || [])
+                      .filter((test: HomeworkTest) => {
+                        if (test.studentId !== matchedStudent.id) return false;
+                        try {
+                          const testDate = parseISO(test.date);
+                          return isWithinInterval(testDate, { start, end });
+                        } catch {
+                          return false;
+                        }
+                      })
+                      .sort((a, b) => a.date.localeCompare(b.date));
+
+                    return (
+                      <div className="space-y-8 animate-fade-in">
+                        {/* Student identity header */}
+                        <div className="bg-slate-950 p-6 sm:p-8 border border-white/10 rounded-[2rem] flex flex-col sm:flex-row items-center gap-6 justify-between shadow-xl">
+                          <div className="flex items-center gap-4 text-left">
+                            {matchedStudent.photo ? (
+                              <img 
+                                src={matchedStudent.photo} 
+                                alt={matchedStudent.name} 
+                                referrerPolicy="no-referrer"
+                                className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-royal-gold/30 shadow-lg"
+                              />
+                            ) : (
+                              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl royal-gradient-gold flex items-center justify-center text-black font-black text-xl shadow-lg uppercase">
+                                {matchedStudent.name.slice(0, 2)}
+                              </div>
+                            )}
+                            <div>
+                              <h4 className="text-lg sm:text-xl font-black text-white uppercase tracking-tight pr-4">
+                                {matchedStudent.name}
+                              </h4>
+                              <p className="text-[10px] text-royal-gold font-bold uppercase tracking-widest mt-1">
+                                Roll Number: {matchedStudent.rollNumber}
+                              </p>
+                            </div>
+                          </div>
+
+                          <button 
+                            onClick={() => {
+                              setLoggedInStudentRollNumber("");
+                              try {
+                                localStorage.removeItem("royal_student_roll_number");
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }}
+                            className="px-6 py-3.5 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white rounded-xl font-black text-[10px] sm:text-xs uppercase tracking-widest transition-all cursor-pointer"
+                          >
+                            Exit Gateway
+                          </button>
+                        </div>
+
+                        {/* Dynamic weekly Homework Panel */}
+                        <div className="bg-slate-950 p-8 sm:p-10 border border-white/10 rounded-[2.5rem] shadow-2xl relative overflow-hidden space-y-8">
+                          <div className="absolute top-0 inset-x-0 h-[1px] bg-white/10" />
+                          <div className="flex items-center justify-between border-b border-white/5 pb-6">
+                            <h3 className="text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
+                              <Sparkles className="w-5 h-5 text-royal-gold animate-pulse" />
+                              Assignments For This Week
+                            </h3>
+                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
+                              {format(start, "MMM dd")} - {format(end, "MMM dd")}
+                            </span>
+                          </div>
+
+                          {matchedTests.length === 0 ? (
+                            <div className="py-20 text-center text-slate-650 font-bold uppercase text-[11px] sm:text-xs tracking-widest space-y-4">
+                              <FileText className="w-12 h-12 opacity-15 mx-auto animate-pulse" />
+                              <p className="max-w-xs mx-auto leading-relaxed text-slate-500">
+                                No unique homework assignments found for you this week yet! Enjoy and review notes.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-6">
+                              {matchedTests.map((test) => {
+                                return (
+                                  <div key={test.id} className="p-6 sm:p-8 bg-white/5 border border-white/5 rounded-2xl relative hover:border-royal-gold/20 transition-all group">
+                                    <div className="absolute top-0 right-0 p-5">
+                                      <span className="text-[8px] sm:text-[9px] font-black text-royal-gold uppercase tracking-[0.2em] bg-royal-gold/10 px-2.5 py-1.5 rounded-md border border-royal-gold/20 font-mono">
+                                        {safeFormat(test.date, "EEEE, MMMM dd")}
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-3 mt-4 sm:mt-0 pr-2">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-royal-gold" />
+                                        <span className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-widest font-mono">ASSIGNED WORK</span>
+                                      </div>
+                                      <div className="text-slate-100 font-medium text-sm leading-relaxed whitespace-pre-wrap font-sans">
+                                        {test.questions}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </main>
 
@@ -3240,7 +4375,7 @@ function App() {
                   initial={{ opacity: 0, scale: 0.9, y: 20 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                  className="relative bg-slate-950 w-full max-w-2xl max-h-[90vh] sm:max-h-[85vh] rounded-[2rem] sm:rounded-[3rem] overflow-hidden shadow-[0_0_100px_rgba(255,215,0,0.1)] border border-white/10 flex flex-col md:flex-row"
+                  className="relative bg-slate-950 w-full max-w-2xl max-h-[90vh] md:max-h-[85vh] rounded-[2rem] md:rounded-[3rem] overflow-y-auto md:overflow-hidden shadow-[0_0_100px_rgba(255,215,0,0.1)] border border-white/10 flex flex-col md:flex-row no-scrollbar"
                 >
                   {/* Left Side: Profile Info */}
                   <div className="w-full md:w-2/5 royal-gradient-purple p-4 sm:p-10 flex flex-col items-center justify-center text-center relative overflow-hidden flex-shrink-0">
@@ -3299,6 +4434,29 @@ function App() {
                       <div className="bg-black/30 backdrop-blur-xl p-2 sm:p-4 rounded-xl sm:rounded-2xl border border-white/10">
                         <p className="text-[7px] sm:text-[10px] text-emerald-400 font-black uppercase tracking-widest mb-0.5 sm:mb-1">Today</p>
                         <p className="text-lg sm:text-2xl font-black text-white">+{student.dailyPoints}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 sm:mt-6 bg-black/40 backdrop-blur-xl p-3 sm:p-4 rounded-2xl border border-white/10 w-full text-left">
+                      <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-white/5 mx-0.5">
+                        <span className="text-[8px] sm:text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" /> Attendance Rate
+                        </span>
+                        <span className="text-xs sm:text-sm font-black text-emerald-400 font-mono">{(student as any).attendanceRate}%</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5 text-center mt-2.5">
+                        <div className="p-1 sm:p-2 rounded-xl bg-emerald-500/15 border border-emerald-500/20">
+                          <span className="block text-[6px] sm:text-[8px] font-black tracking-widest uppercase text-emerald-400/80">Present</span>
+                          <span className="block text-xs sm:text-sm font-black text-emerald-400">{(student as any).presentCount || 0}d</span>
+                        </div>
+                        <div className="p-1 sm:p-2 rounded-xl bg-amber-500/15 border border-amber-500/20">
+                          <span className="block text-[6px] sm:text-[8px] font-black tracking-widest uppercase text-amber-500/80">Late</span>
+                          <span className="block text-xs sm:text-sm font-black text-amber-500">{(student as any).lateCount || 0}d</span>
+                        </div>
+                        <div className="p-1 sm:p-2 rounded-xl bg-red-500/15 border border-red-500/20">
+                          <span className="block text-[6px] sm:text-[8px] font-black tracking-widest uppercase text-red-500/80">Absent</span>
+                          <span className="block text-xs sm:text-sm font-black text-red-500">{(student as any).absentCount || 0}d</span>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3430,6 +4588,29 @@ function App() {
                     className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight transition-all"
                   />
                 </div>
+                {(() => {
+                  const hasRollNumber = !!(editingStudent?.rollNumber && editingStudent.rollNumber.trim() !== "");
+                  return (
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">
+                        Royal Roll Number {hasRollNumber ? "(Locked)" : "(Auto-generated)"}
+                      </label>
+                      <input 
+                        name="rollNumber"
+                        type="text" 
+                        placeholder="e.g. 54321"
+                        defaultValue={hasRollNumber ? editingStudent.rollNumber : getNextRollNumber(data.students)}
+                        readOnly={hasRollNumber}
+                        className={cn(
+                          "w-full px-8 py-5 border rounded-2xl outline-none font-black uppercase tracking-tight transition-all",
+                          hasRollNumber 
+                            ? "bg-white/5 border-white/5 text-slate-500 cursor-not-allowed select-none focus:ring-0" 
+                            : "bg-white/5 border-white/10 text-white focus:ring-2 focus:ring-royal-gold"
+                        )}
+                      />
+                    </div>
+                  );
+                })()}
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Update Portrait</label>
                   <div className="relative group">
@@ -3832,6 +5013,18 @@ function App() {
                     type="text" 
                     required
                     placeholder="e.g. Stephen Ludia" 
+                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">
+                    Royal Roll Number (Auto-populated next)
+                  </label>
+                  <input 
+                    name="rollNumber"
+                    type="text" 
+                    placeholder="e.g. 54321" 
+                    defaultValue={getNextRollNumber(data.students)}
                     className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
                   />
                 </div>

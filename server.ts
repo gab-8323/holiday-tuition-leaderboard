@@ -74,6 +74,76 @@ async function startServer() {
     return publicUrl;
   };
 
+  // Helper to read student roll numbers from settings table
+  const getRollNumbers = async (client: any) => {
+    try {
+      const { data, error } = await client
+        .from("settings")
+        .select("value")
+        .eq("key", "student_roll_numbers")
+        .single();
+      if (error) return {};
+      return JSON.parse(data.value || "{}");
+    } catch {
+      return {};
+    }
+  };
+
+  // Helper to save student roll numbers to settings table
+  const saveRollNumbers = async (client: any, rollNumbers: any) => {
+    const value = JSON.stringify(rollNumbers);
+    const { data: existing } = await client
+      .from("settings")
+      .select("key")
+      .eq("key", "student_roll_numbers");
+    
+    if (existing && existing.length > 0) {
+      await client
+        .from("settings")
+        .update({ value })
+        .eq("key", "student_roll_numbers");
+    } else {
+      await client
+        .from("settings")
+        .insert([{ key: "student_roll_numbers", value }]);
+    }
+  };
+
+  // Helper to read homework tests from settings table
+  const getHomeworkTests = async (client: any) => {
+    try {
+      const { data, error } = await client
+        .from("settings")
+        .select("value")
+        .eq("key", "homework_tests")
+        .single();
+      if (error) return [];
+      return JSON.parse(data.value || "[]");
+    } catch {
+      return [];
+    }
+  };
+
+  // Helper to save homework tests to settings table
+  const saveHomeworkTests = async (client: any, tests: any) => {
+    const value = JSON.stringify(tests);
+    const { data: existing } = await client
+      .from("settings")
+      .select("key")
+      .eq("key", "homework_tests");
+    
+    if (existing && existing.length > 0) {
+      await client
+        .from("settings")
+        .update({ value })
+        .eq("key", "homework_tests");
+    } else {
+      await client
+        .from("settings")
+        .insert([{ key: "homework_tests", value }]);
+    }
+  };
+
   // API Routes
   app.get("/api/health", (req, res) => {
     console.log("Health check request received");
@@ -104,23 +174,6 @@ async function startServer() {
 
       if (sError || pError) throw sError || pError;
 
-      // Map snake_case to camelCase
-      const mappedStudents = (students || []).map((s: any) => ({
-        id: s.id,
-        name: s.name,
-        photo: s.photo,
-        createdAt: s.created_at
-      }));
-
-      const mappedPoints = (points || []).map((p: any) => ({
-        id: p.id,
-        studentId: p.student_id,
-        points: p.points,
-        description: p.description,
-        date: p.date,
-        createdAt: p.created_at
-      }));
-
       const { data: gallery, error: gError } = await client
         .from("gallery")
         .select("*")
@@ -137,10 +190,49 @@ async function startServer() {
         createdAt: item.created_at
       }));
 
+      // Fetch settings safely
+      let fetchedSettings: any[] = [];
+      try {
+        const { data: dbSettings, error: sErr } = await client
+          .from("settings")
+          .select("*");
+        if (sErr) throw sErr;
+        fetchedSettings = dbSettings || [];
+      } catch (err: any) {
+        console.warn("Failed to fetch settings from table:", err.message);
+      }
+
+      // Read roll numbers and homework tests
+      const rollNumbersSet = fetchedSettings.find((set: any) => set.key === "student_roll_numbers");
+      const parsedRollNumbers = rollNumbersSet ? JSON.parse(rollNumbersSet.value) : {};
+
+      const homeworkTestsSet = fetchedSettings.find((set: any) => set.key === "homework_tests");
+      const parsedHomeworkTests = homeworkTestsSet ? JSON.parse(homeworkTestsSet.value) : [];
+
+      // Map snake_case to camelCase and inject roll numbers
+      const mappedStudents = (students || []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        photo: s.photo,
+        rollNumber: parsedRollNumbers[s.id] || "",
+        createdAt: s.created_at
+      }));
+
+      const mappedPoints = (points || []).map((p: any) => ({
+        id: p.id,
+        studentId: p.student_id,
+        points: p.points,
+        description: p.description,
+        date: p.date,
+        createdAt: p.created_at
+      }));
+
       res.json({ 
         students: mappedStudents, 
         points: mappedPoints,
-        gallery: mappedGallery
+        gallery: mappedGallery,
+        settings: fetchedSettings,
+        tests: parsedHomeworkTests
       });
     } catch (error: any) {
       console.error("Error reading data from Supabase:", error);
@@ -201,8 +293,43 @@ async function startServer() {
     }
   });
 
+  app.post(["/api/settings/upsert", "/api/settings/upsert/"], async (req, res) => {
+    const { key, value } = req.body;
+    try {
+      const client = getSupabase();
+      
+      // Let's check if the setting key exists or upsert it
+      const { data: existing, error: findError } = await client
+        .from("settings")
+        .select("key")
+        .eq("key", key);
+      
+      let error;
+      if (existing && existing.length > 0) {
+        // Update
+        const { error: updateError } = await client
+          .from("settings")
+          .update({ value })
+          .eq("key", key);
+        error = updateError;
+      } else {
+        // Insert
+        const { error: insertError } = await client
+          .from("settings")
+          .insert([{ key, value }]);
+        error = insertError;
+      }
+
+      if (error) throw error;
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error upserting setting:", error);
+      res.status(500).json({ error: error.message || "Failed to upsert setting" });
+    }
+  });
+
   app.post(["/api/students", "/api/students/"], upload.single("photo"), async (req, res) => {
-    const { name } = req.body;
+    const { name, rollNumber } = req.body;
     try {
       const client = getSupabase();
       let photoUrl = null;
@@ -217,10 +344,18 @@ async function startServer() {
         .single();
 
       if (error) throw error;
+
+      if (rollNumber) {
+        const currentRolls = await getRollNumbers(client);
+        currentRolls[data.id] = String(rollNumber).trim();
+        await saveRollNumbers(client, currentRolls);
+      }
+
       res.json({
         id: data.id,
         name: data.name,
         photo: data.photo,
+        rollNumber: rollNumber || "",
         createdAt: data.created_at
       });
     } catch (error: any) {
@@ -231,7 +366,7 @@ async function startServer() {
 
   app.put(["/api/students/:id", "/api/students/:id/"], upload.single("photo"), async (req, res) => {
     const { id } = req.params;
-    const { name } = req.body;
+    const { name, rollNumber } = req.body;
     try {
       const client = getSupabase();
       let updateData: any = { name };
@@ -247,10 +382,18 @@ async function startServer() {
         .single();
 
       if (error) throw error;
+
+      if (rollNumber !== undefined) {
+        const currentRolls = await getRollNumbers(client);
+        currentRolls[data.id] = String(rollNumber).trim();
+        await saveRollNumbers(client, currentRolls);
+      }
+
       res.json({
         id: data.id,
         name: data.name,
         photo: data.photo,
+        rollNumber: rollNumber || "",
         createdAt: data.created_at
       });
     } catch (error: any) {
@@ -269,10 +412,88 @@ async function startServer() {
       const { error } = await client.from("students").delete().eq("id", id);
       
       if (error) throw error;
+
+      const currentRolls = await getRollNumbers(client);
+      if (currentRolls[id]) {
+        delete currentRolls[id];
+        await saveRollNumbers(client, currentRolls);
+      }
+
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting student:", error);
       res.status(500).json({ error: error.message || "Failed to delete student" });
+    }
+  });
+
+  // Homework Tests API Routes
+  app.post(["/api/tests", "/api/tests/"], async (req, res) => {
+    const { studentId, date, questions, id } = req.body;
+    try {
+      const client = getSupabase();
+      const currentTests = await getHomeworkTests(client);
+      
+      let updatedTests;
+      if (id) {
+        // Update existing test
+        updatedTests = currentTests.map((t: any) => 
+          t.id === id ? { ...t, studentId, date, questions } : t
+        );
+      } else {
+        // Insert new test
+        const newTest = {
+          id: uuidv4(),
+          studentId,
+          date: date || new Date().toISOString().split("T")[0],
+          questions,
+          createdAt: new Date().toISOString()
+        };
+        updatedTests = [newTest, ...currentTests];
+      }
+      
+      await saveHomeworkTests(client, updatedTests);
+      res.json({ success: true, tests: updatedTests });
+    } catch (error: any) {
+      console.error("Error saving content for homework tests:", error);
+      res.status(500).json({ error: error.message || "Failed to save homework tests" });
+    }
+  });
+
+  app.delete(["/api/tests/:id", "/api/tests/:id/"], async (req, res) => {
+    const { id } = req.params;
+    const { studentId, date } = req.query;
+    console.log(`[DELETE TEST] Request received. Params ID: "${id}", Query studentId: "${studentId}", Query date: "${date}"`);
+    try {
+      const client = getSupabase();
+      const currentTests = await getHomeworkTests(client);
+      console.log(`[DELETE TEST] Loaded ${currentTests.length} tests from database.`);
+      
+      let matchedCount = 0;
+      const updatedTests = currentTests.filter((t: any) => {
+        // 1. Match by exact ID if we have a valid, non-placeholder ID
+        if (id && id !== "legacy" && id !== "undefined" && t.id && String(t.id) === String(id)) {
+          console.log(`[DELETE TEST] Found match by ID: ${t.id}`);
+          matchedCount++;
+          return false;
+        }
+        
+        // 2. Match by studentId and date fields
+        if (studentId && date && String(t.studentId) === String(studentId) && String(t.date) === String(date)) {
+          console.log(`[DELETE TEST] Found match by studentId (${t.studentId}) and date (${t.date})`);
+          matchedCount++;
+          return false;
+        }
+        
+        return true;
+      });
+
+      console.log(`[DELETE TEST] Matched and filtered out ${matchedCount} test(s). Remaining tests: ${updatedTests.length}`);
+      
+      await saveHomeworkTests(client, updatedTests);
+      res.json({ success: true, deletedCount: matchedCount, tests: updatedTests });
+    } catch (error: any) {
+      console.error("[DELETE TEST] Error deleting content for homework tests:", error);
+      res.status(500).json({ error: error.message || "Failed to delete homework test" });
     }
   });
 
@@ -338,6 +559,57 @@ async function startServer() {
     } catch (error: any) {
       console.error("Error bulk adding points:", error);
       res.status(500).json({ error: error.message || "Failed to bulk add points" });
+    }
+  });
+
+  app.post(["/api/attendance/mark", "/api/attendance/mark/"], async (req, res) => {
+    const { studentId, date, status, points } = req.body;
+    try {
+      const client = getSupabase();
+      
+      // Determine the date range: start of day (date) to start of next day
+      const d = new Date(date + "T12:00:00");
+      const nextD = new Date(d.getTime() + 24 * 60 * 60 * 1000);
+      const nextDate = nextD.toISOString().split("T")[0];
+      
+      // 1. Delete any existing attendance records for this student on this date
+      const { error: deleteError } = await client
+        .from("points")
+        .delete()
+        .eq("student_id", studentId)
+        .gte("date", date)
+        .lt("date", nextDate)
+        .in("description", ["Attendance", "Attendance: Present", "Attendance: Absent", "Attendance: Late"]);
+
+      if (deleteError) {
+        console.error("Error deleting old attendance record:", deleteError);
+        throw deleteError;
+      }
+
+      // 2. If status is provided, insert a new record
+      if (status) {
+        const { data, error: insertError } = await client
+          .from("points")
+          .insert([{
+            student_id: studentId,
+            points: parseFloat(points || "0"),
+            description: `Attendance: ${status}`,
+            date: date
+          }])
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error("Error inserting attendance record:", insertError);
+          throw insertError;
+        }
+        res.json({ success: true, record: data });
+      } else {
+        res.json({ success: true, deleted: true });
+      }
+    } catch (error: any) {
+      console.error("Error marking attendance:", error);
+      res.status(500).json({ error: error.message || "Failed to mark attendance" });
     }
   });
 
