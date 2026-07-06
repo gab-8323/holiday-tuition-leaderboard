@@ -44,7 +44,8 @@ import {
   ChevronDown,
   Minus,
   Loader2,
-  FileText
+  FileText,
+  Home
 } from "lucide-react";
 import { 
   BarChart, 
@@ -294,7 +295,14 @@ function App() {
   const [isSubmittingBid, setIsSubmittingBid] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
   const [showLogin, setShowLogin] = useState(false);
-  const [activeTab, setActiveTab] = useState<"total" | "daily" | "admin" | "analytics" | "gallery" | "tender" | "attendance" | "tests">("total");
+  const [activeTab, setActiveTab] = useState<"home" | "total" | "daily" | "admin" | "analytics" | "gallery" | "tender" | "attendance" | "tests">(() => {
+    try {
+      const savedRoll = localStorage.getItem("royal_student_roll_number");
+      return savedRoll ? "home" : "total";
+    } catch {
+      return "total";
+    }
+  });
   
   // Student Tests input search & active session state
   const [studentRollNumberInput, setStudentRollNumberInput] = useState("");
@@ -305,6 +313,12 @@ function App() {
       return "";
     }
   });
+
+  const [isGuest, setIsGuest] = useState(false);
+  const [portalRole, setPortalRole] = useState<"student" | "admin" | null>(null);
+  const [portalStudentRoll, setPortalStudentRoll] = useState("");
+  const [portalAdminPass, setPortalAdminPass] = useState("");
+  const [isLoggingInOnPortal, setIsLoggingInOnPortal] = useState(false);
 
   // Admin Homework Assignment states
   const [assignmentStudentId, setAssignmentStudentId] = useState("");
@@ -328,6 +342,35 @@ function App() {
   const [attendanceDate, setAttendanceDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const currentDayType = dayTypes[attendanceDate] || "Normal";
   const [markingStudentId, setMarkingStudentId] = useState<string | null>(null);
+
+  const renderStudentAvatar = (student: Student | undefined, iconSizeClasses: string = "w-8 h-8", textClass: string = "text-sm sm:text-base") => {
+    if (!student) {
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-slate-950 text-slate-800">
+          <Users className={iconSizeClasses} />
+        </div>
+      );
+    }
+    const hidePhotosPublicly = !isAdmin && !loggedInStudentRollNumber;
+    if (hidePhotosPublicly || !student.photo) {
+      const getInitials = (name: string) => {
+        if (!name) return "";
+        const parts = name.trim().split(/\s+/);
+        if (parts.length > 1) {
+          return (parts[0][0] + parts[1][0]).toUpperCase();
+        }
+        return parts[0].slice(0, 2).toUpperCase();
+      };
+      const initials = getInitials(student.name);
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-800 to-slate-950 text-royal-gold font-black uppercase text-center relative">
+          <span className={`${textClass} tracking-wider`}>{initials}</span>
+          <div className="absolute inset-0 bg-white/5 opacity-40" />
+        </div>
+      );
+    }
+    return <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />;
+  };
 
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(() => {
     try {
@@ -860,7 +903,9 @@ function App() {
       const result = await signInWithPopup(auth, provider);
       if (result.user.email === "stephenludia@gmail.com") {
         setIsAdmin(true);
+        setIsGuest(false);
         setShowLogin(false);
+        setActiveTab("total");
       } else {
         alert(`Access Denied: ${result.user.email} is not an admin email.`);
       }
@@ -889,13 +934,58 @@ function App() {
       });
       if (res.ok) {
         setIsAdmin(true);
+        setIsGuest(false);
         setShowLogin(false);
         setAdminPassword("");
+        setActiveTab("total");
       } else {
         alert("Invalid password");
       }
     } catch (err) {
       alert("Login failed");
+    }
+  };
+
+  // Portal Specific Login Handlers
+  const handlePortalStudentLogin = () => {
+    const input = portalStudentRoll.trim();
+    if (!input) return;
+    const found = data.students.find(s => s.rollNumber?.trim() === input);
+    if (found) {
+      setLoggedInStudentRollNumber(input);
+      setIsGuest(false);
+      setActiveTab("home");
+      try {
+        localStorage.setItem("royal_student_roll_number", input);
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      alert("Verify your Roll Number again. No matched profile found in Academy.");
+    }
+  };
+
+  const handlePortalAdminLogin = async () => {
+    if (!portalAdminPass) return;
+    setIsLoggingInOnPortal(true);
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: portalAdminPass }),
+      });
+      if (res.ok) {
+        setIsAdmin(true);
+        setIsGuest(false);
+        setPortalAdminPass("");
+        setActiveTab("total");
+      } else {
+        alert("Invalid administrator password.");
+      }
+    } catch (err) {
+      alert("Administrator verification failed.");
+    } finally {
+      setIsLoggingInOnPortal(false);
     }
   };
 
@@ -1214,6 +1304,284 @@ function App() {
     return null;
   };
 
+  const isUserAuthenticated = isAdmin || loggedInStudentRollNumber !== "";
+
+  if (!isUserAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-white font-sans pb-20 selection:bg-royal-gold selection:text-black overflow-x-hidden relative flex flex-col justify-center items-center">
+        <div className="noise-overlay" />
+        
+        {/* Sleek Golden-White Loading Line */}
+        {loading && (
+          <div className="fixed top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-royal-gold via-amber-300 to-royal-gold z-[100] overflow-hidden">
+            <motion.div 
+              initial={{ x: "-100%" }}
+              animate={{ x: "100%" }}
+              transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+              className="w-full h-full bg-gradient-to-r from-transparent via-white to-transparent"
+            />
+          </div>
+        )}
+        
+        {/* Dynamic Spotlight Background */}
+        <div className="fixed inset-0 overflow-hidden pointer-events-none">
+          <motion.div 
+            animate={{
+              x: [0, 100, -100, 0],
+              y: [0, -50, 50, 0],
+              scale: [1, 1.1, 1],
+            }}
+            transition={{
+              duration: 20,
+              repeat: Infinity,
+              ease: "linear"
+            }}
+            className="absolute -top-[20%] -left-[10%] w-[70%] h-[70%] bg-indigo-600/10 blur-[150px] rounded-full"
+          />
+          <motion.div 
+            animate={{
+              x: [0, -120, 120, 0],
+              y: [0, 80, -80, 0],
+              scale: [1, 1.2, 1],
+            }}
+            transition={{
+              duration: 25,
+              repeat: Infinity,
+              ease: "linear"
+            }}
+            className="absolute -bottom-[20%] -right-[10%] w-[70%] h-[70%] bg-royal-gold/5 blur-[150px] rounded-full"
+          />
+        </div>
+
+        {/* Floating Particles */}
+        <div className="fixed inset-0 pointer-events-none z-0">
+          {[...Array(20)].map((_, i) => (
+            <motion.div
+              key={i}
+              initial={{ 
+                x: Math.random() * 100 + "%", 
+                y: Math.random() * 100 + "%",
+                opacity: Math.random() * 0.5
+              }}
+              animate={{
+                y: ["-10%", "110%"],
+                opacity: [0, 0.3, 0]
+              }}
+              transition={{
+                duration: Math.random() * 10 + 15,
+                repeat: Infinity,
+                ease: "linear",
+                delay: Math.random() * 10
+              }}
+              className="absolute w-1 h-1 bg-royal-gold rounded-full blur-[1px]"
+            />
+          ))}
+        </div>
+
+        {/* WELCOME PORTAL CONTENT */}
+        <div className="relative min-h-[90vh] flex flex-col items-center justify-center p-4 sm:p-6 md:p-10 z-10 animate-fade-in w-full max-w-6xl">
+          {/* Logo / Crest */}
+          <motion.div 
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+            className="flex flex-col items-center text-center mb-10 sm:mb-16 mt-6"
+          >
+            <div className="relative mb-6 group animate-pulse">
+              <div className="absolute -inset-2 bg-gradient-to-r from-royal-gold to-amber-600 rounded-3xl blur opacity-30 group-hover:opacity-60 transition duration-1000"></div>
+              <div className="relative bg-black p-5 sm:p-6 rounded-2xl border-2 border-royal-gold/40 shadow-2xl rotate-3 group-hover:rotate-0 transition-all duration-500">
+                <Crown className="w-12 h-12 sm:w-16 sm:h-16 text-royal-gold" />
+              </div>
+            </div>
+            <h1 className="text-3xl sm:text-6xl font-black tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white via-slate-200 to-slate-500 uppercase leading-none">
+              THE ROYAL ACADEMY
+            </h1>
+            <p className="text-royal-gold text-[10px] sm:text-xs font-black uppercase tracking-[0.4em] mt-3">
+              Tuition Excellence & Honors Portal
+            </p>
+          </motion.div>
+
+          {/* Core Portal Content */}
+          <div className="w-full max-w-4xl flex justify-center items-center">
+            {portalRole === null ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
+                {/* Student Selection Card */}
+                <motion.div
+                  key="select-student"
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5 }}
+                  onClick={() => setPortalRole("student")}
+                  className="group bg-white/5 backdrop-blur-2xl border border-white/10 p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] hover:border-royal-gold/40 hover:bg-white/[0.07] transition-all duration-300 shadow-3xl flex flex-col h-full cursor-pointer text-left relative overflow-hidden"
+                >
+                  <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-royal-gold/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="p-3 rounded-2xl bg-royal-gold/10 border border-royal-gold/20 text-royal-gold group-hover:scale-110 transition-transform">
+                      <Award className="w-6 h-6 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">Scholars</h3>
+                      <p className="text-lg font-black text-white uppercase tracking-tight">Student Chamber</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 font-medium leading-relaxed mb-8">
+                    Unlock your points ledger, weekly tests, assignment marks, and access the customized academy gallery.
+                  </p>
+                  <div className="mt-auto pt-4 flex items-center justify-between text-royal-gold font-black text-xs uppercase tracking-[0.2em]">
+                    <span>Enter Student Portal</span>
+                    <ChevronRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </motion.div>
+
+                {/* Admin Selection Card */}
+                <motion.div
+                  key="select-admin"
+                  initial={{ opacity: 0, y: 30 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.1 }}
+                  onClick={() => setPortalRole("admin")}
+                  className="group bg-white/5 backdrop-blur-2xl border border-white/10 p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] hover:border-amber-600/40 hover:bg-white/[0.07] transition-all duration-300 shadow-3xl flex flex-col h-full cursor-pointer text-left relative overflow-hidden"
+                >
+                  <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-500/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-500 group-hover:scale-110 transition-transform">
+                      <Lock className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">Faculty</h3>
+                      <p className="text-lg font-black text-white uppercase tracking-tight">Admin Chamber</p>
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-400 font-medium leading-relaxed mb-8">
+                    Access administrative controls to manage rosters, award points, assign homework, and record daily attendance.
+                  </p>
+                  <div className="mt-auto pt-4 flex items-center justify-between text-amber-500 font-black text-xs uppercase tracking-[0.2em]">
+                    <span>Enter Faculty Portal</span>
+                    <ChevronRight className="w-4 h-4 transform group-hover:translate-x-1 transition-transform" />
+                  </div>
+                </motion.div>
+              </div>
+            ) : portalRole === "student" ? (
+              /* Student Login View */
+              <motion.div
+                key="student-login"
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className="w-full max-w-md bg-white/5 backdrop-blur-2xl border border-royal-gold/20 p-6 sm:p-8 rounded-2xl sm:rounded-[2.5rem] shadow-3xl relative overflow-hidden text-left"
+              >
+                <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-royal-gold to-transparent" />
+                
+                {/* Back Button */}
+                <button
+                  onClick={() => setPortalRole(null)}
+                  className="absolute top-6 left-6 flex items-center gap-1.5 text-[10px] font-black text-slate-500 hover:text-royal-gold uppercase tracking-[0.15em] transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Back</span>
+                </button>
+
+                <div className="flex flex-col items-center text-center mt-4 mb-8">
+                  <div className="p-3 rounded-2xl bg-royal-gold/10 border border-royal-gold/20 text-royal-gold mb-4">
+                    <Award className="w-8 h-8 animate-pulse" />
+                  </div>
+                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">Scholars</h3>
+                  <p className="text-xl font-black text-white uppercase tracking-tight">Student Login</p>
+                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-2 max-w-xs">
+                    Please provide your unique roll number to securely unlock your ledger and academy dashboard.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <input 
+                    type="text"
+                    placeholder="ENTER STUDENT ROLL NUMBER"
+                    value={portalStudentRoll}
+                    onChange={(e) => setPortalStudentRoll(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handlePortalStudentLogin();
+                    }}
+                    className="w-full text-center px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-[0.2em] placeholder:text-slate-800 text-xs"
+                    autoFocus
+                  />
+                  <button 
+                    onClick={handlePortalStudentLogin}
+                    className="w-full py-3 royal-gradient-gold text-black rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    Enter Chamber
+                  </button>
+                </div>
+              </motion.div>
+            ) : (
+              /* Admin Login View */
+              <motion.div
+                key="admin-login"
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className="w-full max-w-md bg-white/5 backdrop-blur-2xl border border-amber-600/20 p-6 sm:p-8 rounded-2xl sm:rounded-[2.5rem] shadow-3xl relative overflow-hidden text-left"
+              >
+                <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-amber-500 to-transparent" />
+                
+                {/* Back Button */}
+                <button
+                  onClick={() => setPortalRole(null)}
+                  className="absolute top-6 left-6 flex items-center gap-1.5 text-[10px] font-black text-slate-500 hover:text-amber-500 uppercase tracking-[0.15em] transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Back</span>
+                </button>
+
+                <div className="flex flex-col items-center text-center mt-4 mb-8">
+                  <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-500 mb-4">
+                    <Lock className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em]">Faculty</h3>
+                  <p className="text-xl font-black text-white uppercase tracking-tight">Faculty Login</p>
+                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-2 max-w-xs">
+                    Please enter the administrative password or connect your authorized Google account.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <input 
+                    type="password"
+                    placeholder="ENTER ADMIN PASSWORD"
+                    value={portalAdminPass}
+                    onChange={(e) => setPortalAdminPass(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handlePortalAdminLogin();
+                    }}
+                    className="w-full text-center px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-[0.2em] placeholder:text-slate-800 text-xs"
+                    autoFocus
+                  />
+                  <div className="space-y-3">
+                    <button 
+                      onClick={handlePortalAdminLogin}
+                      className="w-full py-3 bg-white/10 border border-white/20 text-white hover:royal-gradient-gold hover:text-black hover:border-transparent rounded-xl font-black text-xs uppercase tracking-[0.2em] shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      {isLoggingInOnPortal ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        "Access Chamber"
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleGoogleLogin}
+                      className="w-full text-[9px] font-black text-slate-500 hover:text-royal-gold hover:underline transition-colors uppercase tracking-[0.2em] mt-1 text-center cursor-pointer"
+                    >
+                      Or Auth with Google
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans pb-20 selection:bg-royal-gold selection:text-black overflow-x-hidden">
@@ -1565,21 +1933,27 @@ function App() {
                 </div>
               </button>
             )}
-            {isAdmin ? (
+            {isAdmin || loggedInStudentRollNumber !== "" || isGuest ? (
               <button 
-                onClick={() => setIsAdmin(false)}
-                className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                onClick={() => {
+                  setIsAdmin(false);
+                  setLoggedInStudentRollNumber("");
+                  setActiveTab("total");
+                  try {
+                    localStorage.removeItem("royal_student_roll_number");
+                  } catch (err) {
+                    console.error(err);
+                  }
+                  setIsGuest(false);
+                  setPortalRole(null);
+                }}
+                className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 text-slate-400 hover:text-red-400 hover:bg-red-400/10 transition-all flex items-center gap-2"
+                title="Exit Portal"
               >
                 <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
+                <span className="hidden sm:inline text-xs font-black uppercase tracking-[0.2em]">Exit Portal</span>
               </button>
-            ) : (
-              <button 
-                onClick={() => setShowLogin(true)}
-                className="p-2.5 sm:p-3 rounded-xl sm:rounded-2xl bg-white/5 border border-white/10 text-slate-400 hover:text-royal-gold hover:bg-royal-gold/10 transition-all"
-              >
-                <Lock className="w-4 h-4 sm:w-5 sm:h-5" />
-              </button>
-            )}
+            ) : null}
           </div>
         </div>
       </header>
@@ -1604,13 +1978,19 @@ function App() {
         {/* Navigation Tabs */}
         <div className="flex items-center overflow-x-auto no-scrollbar bg-white/5 backdrop-blur-xl p-1 sm:p-2 rounded-[1.5rem] sm:rounded-[2.5rem] border border-white/10 mb-6 sm:mb-12 shadow-3xl">
           {[
-            { id: "total", label: "HALL OF FAME", icon: Award },
-            { id: "daily", label: "DAILY STARS", icon: Sparkles },
+            ...(loggedInStudentRollNumber ? [
+              { id: "home", label: "HOME", icon: Home }
+            ] : [
+              { id: "total", label: "HALL OF FAME", icon: Award },
+              { id: "daily", label: "DAILY STARS", icon: Sparkles }
+            ]),
             ...(isAdmin ? [
               { id: "attendance", label: "ATTENDANCE", icon: CheckCircle2 }
             ] : []),
             { id: "gallery", label: "GALLERY", icon: ImageIcon },
-            { id: "analytics", label: "INSIGHTS", icon: BarChart3 },
+            ...(!loggedInStudentRollNumber ? [
+              { id: "analytics", label: "INSIGHTS", icon: BarChart3 }
+            ] : []),
             { id: "tender", label: "TENDER", icon: Gavel },
             { id: "tests", label: "TESTS", icon: FileText },
             ...(isAdmin ? [
@@ -1642,6 +2022,223 @@ function App() {
 
         {/* Content Area */}
         <div className="space-y-8">
+          {activeTab === "home" && loggedInStudentRollNumber && (
+            <div className="space-y-10 sm:space-y-12 animate-fade-in text-left">
+              {/* Home Header */}
+              {(() => {
+                const student = data.students.find(s => s.rollNumber?.trim() === loggedInStudentRollNumber.trim());
+                if (!student) return null;
+
+                // Rank Calculations
+                const allWeeklyStats = data.students.map(stud => {
+                  const targetDate = safeParseISO(resolvedWeeklyViewDate);
+                  const start = startOfWeek(targetDate, { weekStartsOn: 1 });
+                  const end = endOfWeek(targetDate, { weekStartsOn: 1 });
+                  const points = data.points
+                    .filter(p => p.studentId === stud.id && isWithinInterval(safeParseISO(p.date || p.createdAt), { start, end }))
+                    .reduce((sum, p) => sum + p.points, 0);
+                  const allTimePoints = data.points.filter(p => p.studentId === stud.id).reduce((sum, p) => sum + p.points, 0);
+                  return { id: stud.id, totalPoints: points, allTimePoints };
+                }).sort((a, b) => b.totalPoints - a.totalPoints || b.allTimePoints - a.allTimePoints);
+                const weeklyRank = allWeeklyStats.findIndex(s => s.id === student.id) + 1;
+                const weeklyPoints = allWeeklyStats.find(s => s.id === student.id)?.totalPoints || 0;
+
+                const allDailyStats = data.students.map(stud => {
+                  const targetDate = safeParseISO(resolvedDailyViewDate);
+                  const points = data.points
+                    .filter(p => p.studentId === stud.id && isSameDay(safeParseISO(p.date || p.createdAt), targetDate))
+                    .reduce((sum, p) => sum + p.points, 0);
+                  const allTimePoints = data.points.filter(p => p.studentId === stud.id).reduce((sum, p) => sum + p.points, 0);
+                  return { id: stud.id, totalPoints: points, allTimePoints };
+                }).sort((a, b) => b.totalPoints - a.totalPoints || b.allTimePoints - a.allTimePoints);
+                const dailyRank = allDailyStats.findIndex(s => s.id === student.id) + 1;
+                const dailyPoints = allDailyStats.find(s => s.id === student.id)?.totalPoints || 0;
+
+                // Weekly Attendance percentage calculation
+                const startW = startOfWeek(new Date(), { weekStartsOn: 1 });
+                const endW = endOfWeek(new Date(), { weekStartsOn: 1 });
+                const studentWeekAttendance = data.points.filter(p => {
+                  if (p.studentId !== student.id) return false;
+                  const desc = p.description || "";
+                  const isAttendance = desc.startsWith("Attendance:") || desc === "Attendance";
+                  if (!isAttendance) return false;
+                  try {
+                    const pDate = safeParseISO(p.date || p.createdAt);
+                    return isWithinInterval(pDate, { start: startW, end: endW });
+                  } catch {
+                    return false;
+                  }
+                });
+
+                let present = 0;
+                let late = 0;
+                let absent = 0;
+                studentWeekAttendance.forEach(p => {
+                  const desc = p.description || "";
+                  if (desc === "Attendance: Present" || desc === "Attendance") {
+                    present++;
+                  } else if (desc === "Attendance: Late") {
+                    late++;
+                  } else if (desc === "Attendance: Absent") {
+                    absent++;
+                  }
+                });
+
+                const totalAtt = present + late + absent;
+                const attendanceRateThisWeek = totalAtt > 0 ? Math.round(((present + late) / totalAtt) * 100) : 100;
+
+                // Points Gained Calculation
+                const today = startOfDay(new Date());
+                const dayPointsGained = data.points
+                  .filter(p => p.studentId === student.id && isSameDay(safeParseISO(p.date || p.createdAt), today))
+                  .reduce((sum, p) => sum + p.points, 0);
+
+                const weekPointsGained = data.points
+                  .filter(p => p.studentId === student.id && isWithinInterval(safeParseISO(p.date || p.createdAt), { start: startW, end: endW }))
+                  .reduce((sum, p) => sum + p.points, 0);
+
+                // Past 7 days points history for chart
+                const chartData = Array.from({ length: 7 }).map((_, i) => {
+                  const day = startOfDay(subDays(new Date(), 6 - i));
+                  const points = data.points
+                    .filter(p => p.studentId === student.id && isSameDay(safeParseISO(p.date || p.createdAt), day))
+                    .reduce((sum, p) => sum + p.points, 0);
+                  return {
+                    date: format(day, "EEE"),
+                    points,
+                  };
+                });
+
+                return (
+                  <div className="space-y-8 animate-fade-in">
+                    {/* Welcome Banner Card */}
+                    <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 p-5 sm:p-8 border border-white/10 rounded-2xl sm:rounded-[2rem] shadow-3xl relative overflow-hidden flex flex-col md:flex-row items-center gap-6 justify-between">
+                      <div className="absolute top-0 right-0 w-80 h-80 bg-royal-gold/5 blur-[80px] rounded-full pointer-events-none" />
+                      
+                      <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left relative z-10">
+                        {/* Student Photo */}
+                        <div className="relative group">
+                          <div className="absolute -inset-1 bg-gradient-to-r from-royal-gold to-amber-500 rounded-2xl sm:rounded-[2rem] blur opacity-30 group-hover:opacity-50 transition-opacity"></div>
+                          <div className="relative w-20 h-20 sm:w-28 sm:h-28 rounded-2xl sm:rounded-[2rem] overflow-hidden border-4 border-royal-gold/30 bg-slate-900 flex-shrink-0 shadow-2xl">
+                            {renderStudentAvatar(student, "w-12 h-12 sm:w-16 sm:h-16", "text-2xl sm:text-3xl")}
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-royal-gold/10 border border-royal-gold/20 rounded-full">
+                            <Crown className="w-3 h-3 text-royal-gold animate-pulse" />
+                            <span className="text-[8px] font-black text-royal-gold uppercase tracking-[0.15em]">Scholar Portal</span>
+                          </div>
+                          <h2 className="text-2xl sm:text-3.5xl font-black text-white uppercase tracking-tight leading-none">
+                            {student.name}
+                          </h2>
+                          <p className="text-slate-500 text-[10px] sm:text-xs font-black uppercase tracking-widest font-mono">
+                            Roll Number: {student.rollNumber}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Summary Metrics */}
+                      <div className="grid grid-cols-2 gap-3 w-full md:w-auto relative z-10">
+                        <div className="bg-white/5 border border-white/5 backdrop-blur-xl p-3.5 sm:p-4 rounded-2xl text-center min-w-[100px] sm:min-w-[120px]">
+                          <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Today's Marks</span>
+                          <span className="block text-xl sm:text-2xl font-black text-royal-gold font-mono">+{dayPointsGained}</span>
+                        </div>
+                        <div className="bg-white/5 border border-white/5 backdrop-blur-xl p-3.5 sm:p-4 rounded-2xl text-center min-w-[100px] sm:min-w-[120px]">
+                          <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">This Week's Marks</span>
+                          <span className="block text-xl sm:text-2xl font-black text-emerald-400 font-mono">+{weekPointsGained}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bento Grid Info Row */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+                      {/* Weekly Rank Card */}
+                      <div className="bg-white/5 backdrop-blur-2xl p-5 sm:p-6 rounded-2xl border border-white/10 shadow-xl flex flex-col justify-between relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 sm:p-6 opacity-10">
+                          <Trophy className="w-16 h-16 sm:w-20 sm:h-20 text-royal-gold" />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] font-mono">Current Weekly Rank</span>
+                          <h3 className="text-3xl sm:text-4xl font-black text-white font-mono tracking-tight">#{weeklyRank}</h3>
+                        </div>
+                        <div className="mt-4 sm:mt-6 flex items-center justify-between text-[9px] sm:text-[10px] text-slate-500 font-black uppercase tracking-wider border-t border-white/5 pt-3">
+                          <span>Weekly Points</span>
+                          <span className="text-royal-gold font-mono">{weeklyPoints} pts</span>
+                        </div>
+                      </div>
+
+                      {/* Daily Rank Card */}
+                      <div className="bg-white/5 backdrop-blur-2xl p-5 sm:p-6 rounded-2xl border border-white/10 shadow-xl flex flex-col justify-between relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 sm:p-6 opacity-10">
+                          <Star className="w-16 h-16 sm:w-20 sm:h-20 text-amber-500" />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] font-mono">Current Daily Rank</span>
+                          <h3 className="text-3xl sm:text-4xl font-black text-white font-mono tracking-tight">#{dailyRank}</h3>
+                        </div>
+                        <div className="mt-4 sm:mt-6 flex items-center justify-between text-[9px] sm:text-[10px] text-slate-500 font-black uppercase tracking-wider border-t border-white/5 pt-3">
+                          <span>Daily Points</span>
+                          <span className="text-royal-gold font-mono">{dailyPoints} pts</span>
+                        </div>
+                      </div>
+
+                      {/* Weekly Attendance Card */}
+                      <div className="bg-white/5 backdrop-blur-2xl p-5 sm:p-6 rounded-2xl border border-white/10 shadow-xl flex flex-col justify-between relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 sm:p-6 opacity-10">
+                          <CheckCircle2 className="w-16 h-16 sm:w-20 sm:h-20 text-emerald-400" />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[8px] sm:text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] font-mono">Attendance of That Week</span>
+                          <h3 className="text-3xl sm:text-4xl font-black text-emerald-400 font-mono tracking-tight">{attendanceRateThisWeek}%</h3>
+                        </div>
+                        <div className="mt-4 sm:mt-6 flex items-center justify-between text-[9px] sm:text-[10px] text-slate-500 font-black uppercase tracking-wider border-t border-white/5 pt-3">
+                          <span>Marked Days</span>
+                          <span className="text-emerald-400 font-mono">{present + late}/{totalAtt || 0} days</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Chart Section */}
+                    <div className="bg-white/5 backdrop-blur-2xl p-5 sm:p-8 rounded-2xl sm:rounded-[2.5rem] border border-white/10 shadow-3xl">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                        <div className="flex items-center gap-4">
+                          <div className="bg-royal-gold/10 p-3 rounded-2xl border border-royal-gold/20">
+                            <TrendingUp className="w-6 h-6 text-royal-gold" />
+                          </div>
+                          <div>
+                            <h3 className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">Marks Performance</h3>
+                            <p className="text-lg font-black text-white tracking-tight">Your Daily Marks (Past 7 Days)</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={chartData}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                            <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
+                            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b', fontWeight: 900 }} />
+                            <Tooltip 
+                              contentStyle={{ backgroundColor: '#000', borderRadius: '1.5rem', border: '1px solid rgba(255,215,0,0.2)', boxShadow: '0 25px 50px -12px rgb(0 0 0 / 0.8)' }}
+                              itemStyle={{ color: '#FFD700', fontWeight: 900 }}
+                              cursor={{ fill: 'rgba(255,255,255,0.03)' }}
+                            />
+                            <Bar dataKey="points" radius={[8, 8, 0, 0]}>
+                              {chartData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.points > 0 ? '#FFD700' : '#1e293b'} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           {activeTab === "total" && (
             <div className="space-y-12">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 sm:gap-8 text-center sm:text-left">
@@ -1693,13 +2290,7 @@ function App() {
                     >
                       <div className="relative mb-4 sm:mb-6">
                         <div className="w-20 h-20 sm:w-32 sm:h-32 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-slate-400/30 overflow-hidden bg-slate-900 shadow-2xl rotate-[-4deg] group-hover:rotate-0 transition-all duration-700">
-                          {top3[1]?.photo ? (
-                            <img src={top3[1].photo} alt={top3[1].name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-slate-700">
-                              <Users className="w-8 h-8 sm:w-12 sm:h-12" />
-                            </div>
-                          )}
+                          {renderStudentAvatar(top3[1], "w-8 h-8 sm:w-12 sm:h-12", "text-lg sm:text-2xl")}
                         </div>
                         <div className="absolute -top-3 -left-3 sm:-top-4 sm:-left-4 bg-slate-400 text-slate-900 text-[8px] sm:text-[10px] font-black px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-xl rotate-[-12deg] border border-white/20">SILVER</div>
                       </div>
@@ -1727,13 +2318,7 @@ function App() {
                         <div className="relative">
                           <div className="absolute -inset-3 sm:-inset-4 royal-gradient-gold rounded-[2rem] sm:rounded-[3rem] blur-xl sm:blur-2xl opacity-0 group-hover:opacity-20 transition-opacity"></div>
                           <div className="relative w-28 h-28 sm:w-48 sm:h-48 rounded-[2rem] sm:rounded-[3rem] border-4 border-royal-gold/50 overflow-hidden bg-slate-900 shadow-[0_0_60px_rgba(255,215,0,0.15)] rotate-[4deg] group-hover:rotate-0 transition-all duration-700">
-                            {top3[0]?.photo ? (
-                              <img src={top3[0].photo} alt={top3[0].name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-slate-700">
-                                <Users className="w-12 h-12 sm:w-20 sm:h-20" />
-                              </div>
-                            )}
+                            {renderStudentAvatar(top3[0], "w-12 h-12 sm:w-20 sm:h-20", "text-2xl sm:text-4xl")}
                             <div className="absolute inset-0 shimmer opacity-20" />
                           </div>
                         </div>
@@ -1757,13 +2342,7 @@ function App() {
                     >
                       <div className="relative mb-4 sm:mb-6">
                         <div className="w-20 h-20 sm:w-32 sm:h-32 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-amber-800/30 overflow-hidden bg-slate-900 shadow-2xl rotate-[4deg] group-hover:rotate-0 transition-all duration-700">
-                          {top3[2]?.photo ? (
-                            <img src={top3[2].photo} alt={top3[2].name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-slate-700">
-                              <Users className="w-8 h-8 sm:w-12 sm:h-12" />
-                            </div>
-                          )}
+                          {renderStudentAvatar(top3[2], "w-8 h-8 sm:w-12 sm:h-12", "text-lg sm:text-2xl")}
                         </div>
                         <div className="absolute -top-3 -right-3 sm:-top-4 sm:-right-4 bg-amber-800 text-white text-[8px] sm:text-[10px] font-black px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-xl rotate-[12deg] border border-white/20">BRONZE</div>
                       </div>
@@ -1811,13 +2390,7 @@ function App() {
                             "w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl overflow-hidden bg-slate-900 border transition-all duration-500 group-hover:scale-110 group-hover:rotate-3",
                             index === 0 ? "border-royal-gold/50 shadow-[0_0_20px_rgba(255,215,0,0.2)]" : "border-white/10"
                           )}>
-                            {student.photo ? (
-                              <img src={student.photo} alt={student.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-slate-700">
-                                <Users className="w-6 h-6 sm:w-8 sm:h-8" />
-                              </div>
-                            )}
+                            {renderStudentAvatar(student, "w-6 h-6 sm:w-8 sm:h-8", "text-sm sm:text-lg")}
                           </div>
                           {index === 0 && (
                             <div className="absolute -top-1.5 -right-1.5 bg-royal-gold rounded-full p-0.5 sm:p-1 shadow-xl">
@@ -1900,13 +2473,7 @@ function App() {
                       >
                         <div className="relative mb-4 sm:mb-6">
                           <div className="w-20 h-20 sm:w-32 sm:h-32 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-slate-400/30 overflow-hidden bg-slate-900 shadow-2xl rotate-[-4deg] group-hover:rotate-0 transition-all duration-700">
-                            {dailyLeaderboard[1].photo ? (
-                              <img src={dailyLeaderboard[1].photo} alt={dailyLeaderboard[1].name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-slate-700">
-                                <Users className="w-8 h-8 sm:w-12 sm:h-12" />
-                              </div>
-                            )}
+                            {renderStudentAvatar(dailyLeaderboard[1], "w-8 h-8 sm:w-12 sm:h-12", "text-lg sm:text-2xl")}
                           </div>
                           <div className="absolute -top-3 -left-3 sm:-top-4 sm:-left-4 bg-slate-400 text-slate-900 text-[8px] sm:text-[10px] font-black px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-xl rotate-[-12deg] border border-white/20">SILVER</div>
                         </div>
@@ -1936,13 +2503,7 @@ function App() {
                           <div className="relative">
                             <div className="absolute -inset-3 sm:-inset-4 royal-gradient-gold rounded-[2rem] sm:rounded-[3rem] blur-xl sm:blur-2xl opacity-0 group-hover:opacity-20 transition-opacity"></div>
                             <div className="relative w-28 h-28 sm:w-48 sm:h-48 rounded-[2rem] sm:rounded-[3rem] border-4 border-royal-gold/50 overflow-hidden bg-slate-900 shadow-[0_0_60px_rgba(255,215,0,0.15)] rotate-[4deg] group-hover:rotate-0 transition-all duration-700">
-                              {dailyLeaderboard[0].photo ? (
-                                <img src={dailyLeaderboard[0].photo} alt={dailyLeaderboard[0].name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-700">
-                                  <Users className="w-12 h-12 sm:w-20 sm:h-20" />
-                                </div>
-                              )}
+                              {renderStudentAvatar(dailyLeaderboard[0], "w-12 h-12 sm:w-20 sm:h-20", "text-2xl sm:text-4xl")}
                               <div className="absolute inset-0 shimmer opacity-20" />
                             </div>
                           </div>
@@ -1968,13 +2529,7 @@ function App() {
                       >
                         <div className="relative mb-4 sm:mb-6">
                           <div className="w-20 h-20 sm:w-32 sm:h-32 rounded-[1.5rem] sm:rounded-[2rem] border-2 border-amber-800/30 overflow-hidden bg-slate-900 shadow-2xl rotate-[4deg] group-hover:rotate-0 transition-all duration-700">
-                            {dailyLeaderboard[2].photo ? (
-                              <img src={dailyLeaderboard[2].photo} alt={dailyLeaderboard[2].name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center text-slate-700">
-                                <Users className="w-8 h-8 sm:w-12 sm:h-12" />
-                              </div>
-                            )}
+                            {renderStudentAvatar(dailyLeaderboard[2], "w-8 h-8 sm:w-12 sm:h-12", "text-lg sm:text-2xl")}
                           </div>
                           <div className="absolute -top-3 -right-3 sm:-top-4 sm:-right-4 bg-amber-800 text-white text-[8px] sm:text-[10px] font-black px-3 sm:px-4 py-1 sm:py-1.5 rounded-lg sm:rounded-xl shadow-xl rotate-[12deg] border border-white/20">BRONZE</div>
                         </div>
@@ -2260,7 +2815,87 @@ function App() {
                 )}
               </div>
 
-              {data.gallery && data.gallery.length > 0 ? (
+              {!isAdmin && !loggedInStudentRollNumber ? (
+                <div className="max-w-xl mx-auto bg-slate-950 border border-white/10 rounded-[3rem] p-10 text-center space-y-8 animate-fade-in relative overflow-hidden mt-6">
+                  <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-royal-gold to-transparent" />
+                  
+                  <div className="w-20 h-20 rounded-3xl bg-royal-gold/5 border border-royal-gold/20 flex items-center justify-center mx-auto text-royal-gold animate-bounce">
+                    <Lock className="w-10 h-10" />
+                  </div>
+
+                  <div className="space-y-3">
+                    <h3 className="text-xl sm:text-2xl font-black text-white uppercase tracking-tight">Gallery moments are private</h3>
+                    <p className="text-[10px] sm:text-xs text-slate-500 font-black uppercase tracking-widest max-w-md mx-auto leading-loose">
+                      Moments from student activities are exclusive to enrolled scholars and faculty. Verify your credentials below to view the gallery.
+                    </p>
+                  </div>
+
+                  <div className="space-y-6 max-w-sm mx-auto pt-4">
+                    <div className="space-y-3">
+                      <input 
+                        type="text"
+                        placeholder="ENTER STUDENT ROLL NUMBER"
+                        value={studentRollNumberInput}
+                        onChange={(e) => setStudentRollNumberInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const input = studentRollNumberInput.trim();
+                            if (!input) return;
+                            const found = data.students.find(s => s.rollNumber?.trim() === input);
+                            if (found) {
+                              setLoggedInStudentRollNumber(input);
+                              setIsGuest(false);
+                              try {
+                                localStorage.setItem("royal_student_roll_number", input);
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            } else {
+                              alert("Verify your Roll Number again. No matched profile found in Academy.");
+                            }
+                          }
+                        }}
+                        className="w-full text-center px-6 py-4 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-[0.2em] placeholder:text-slate-800 text-xs"
+                      />
+                      <button 
+                        onClick={() => {
+                          const input = studentRollNumberInput.trim();
+                          if (!input) return;
+                          const found = data.students.find(s => s.rollNumber?.trim() === input);
+                          if (found) {
+                            setLoggedInStudentRollNumber(input);
+                            setIsGuest(false);
+                            try {
+                              localStorage.setItem("royal_student_roll_number", input);
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          } else {
+                            alert("Verify your Roll Number again. No matched profile found in Academy.");
+                          }
+                        }}
+                        className="w-full py-4 royal-gradient-gold text-black rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer"
+                      >
+                        Unlock Moments
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-center gap-3">
+                      <div className="h-[1px] bg-white/10 flex-1" />
+                      <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest">or</span>
+                      <div className="h-[1px] bg-white/10 flex-1" />
+                    </div>
+
+                    <button 
+                      onClick={() => setShowLogin(true)}
+                      className="w-full py-4 bg-white/5 border border-white/10 hover:border-white/20 hover:bg-white/10 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <Crown className="w-4 h-4 text-royal-gold" />
+                      <span>Verify Faculty Credentials</span>
+                    </button>
+                  </div>
+                </div>
+              ) : data.gallery && data.gallery.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 auto-rows-[300px]">
                   {data.gallery.map((item, index) => item && (
                     <motion.div 
@@ -4562,13 +5197,13 @@ function App() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-slate-950 w-full max-w-md rounded-[3rem] p-10 shadow-3xl border border-white/10 overflow-hidden"
+              className="relative bg-slate-950 w-full max-w-md rounded-2xl sm:rounded-[2.5rem] p-6 sm:p-10 shadow-3xl border border-white/10 overflow-hidden"
             >
               <div className="absolute -top-24 -right-24 w-48 h-48 royal-gradient-gold opacity-10 blur-[80px] rounded-full" />
-              <div className="flex items-center justify-between mb-10 relative z-10">
-                <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Edit Profile</h2>
+              <div className="flex items-center justify-between mb-8 sm:mb-10 relative z-10">
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">Edit Profile</h2>
                 <button onClick={() => setEditingStudent(null)} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-xl">
-                  <X className="w-7 h-7" />
+                  <X className="w-6 h-6 sm:w-7 sm:h-7" />
                 </button>
               </div>
               <form onSubmit={async (e) => {
@@ -4577,21 +5212,21 @@ function App() {
                 await fetch(`/api/students/${editingStudent.id}`, { method: "PUT", body: formData });
                 setEditingStudent(null);
                 fetchData();
-              }} className="space-y-8 relative z-10">
-                <div className="space-y-3">
+              }} className="space-y-6 sm:space-y-8 relative z-10">
+                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Royal Name</label>
                   <input 
                     name="name"
                     type="text" 
                     required
                     defaultValue={editingStudent.name}
-                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight transition-all"
+                    className="w-full px-5 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight transition-all"
                   />
                 </div>
                 {(() => {
                   const hasRollNumber = !!(editingStudent?.rollNumber && editingStudent.rollNumber.trim() !== "");
                   return (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">
                         Royal Roll Number {hasRollNumber ? "(Locked)" : "(Auto-generated)"}
                       </label>
@@ -4602,7 +5237,7 @@ function App() {
                         defaultValue={hasRollNumber ? editingStudent.rollNumber : getNextRollNumber(data.students)}
                         readOnly={hasRollNumber}
                         className={cn(
-                          "w-full px-8 py-5 border rounded-2xl outline-none font-black uppercase tracking-tight transition-all",
+                          "w-full px-5 py-3 border rounded-xl outline-none font-black uppercase tracking-tight transition-all",
                           hasRollNumber 
                             ? "bg-white/5 border-white/5 text-slate-500 cursor-not-allowed select-none focus:ring-0" 
                             : "bg-white/5 border-white/10 text-white focus:ring-2 focus:ring-royal-gold"
@@ -4611,18 +5246,18 @@ function App() {
                     </div>
                   );
                 })()}
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Update Portrait</label>
                   <div className="relative group">
                     <input 
                       name="photo"
                       type="file" 
                       accept="image/*"
-                      className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-slate-500 font-black text-xs file:mr-6 file:py-2 file:px-6 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:royal-gradient-gold file:text-black hover:file:scale-105 transition-all"
+                      className="w-full px-5 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-slate-500 font-black text-xs file:mr-4 file:py-1.5 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:royal-gradient-gold file:text-black hover:file:scale-105 transition-all"
                     />
                   </div>
                 </div>
-                <button className="w-full royal-gradient-gold text-black py-6 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
+                <button className="w-full royal-gradient-gold text-black py-3.5 sm:py-5 rounded-xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
                   UPDATE ROYAL PROFILE
                 </button>
               </form>
@@ -4646,7 +5281,7 @@ function App() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative bg-slate-950 w-full h-full sm:h-[90vh] sm:max-w-4xl sm:rounded-[3rem] shadow-3xl overflow-hidden flex flex-col border-t sm:border border-white/10"
+              className="relative bg-slate-950 w-full h-full sm:h-[90vh] sm:max-w-4xl rounded-t-2xl sm:rounded-[2.5rem] shadow-3xl overflow-hidden flex flex-col border-t sm:border border-white/10"
             >
               {/* Header */}
               <div className="p-6 sm:p-8 border-b border-white/5 flex items-center justify-between royal-gradient-gold text-black">
@@ -4689,12 +5324,12 @@ function App() {
                             setBulkStep("students");
                             setBulkPoints({});
                           }}
-                          className="flex flex-col items-center justify-center p-6 sm:p-8 rounded-[2rem] bg-white/5 border border-white/10 hover:border-royal-gold/50 hover:bg-white/10 transition-all group aspect-square"
+                          className="flex flex-col items-center justify-center p-4 sm:p-8 rounded-xl sm:rounded-[2rem] bg-white/5 border border-white/10 hover:border-royal-gold/50 hover:bg-white/10 transition-all group aspect-square"
                         >
-                          <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-royal-gold/10 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                            <Icon className="w-6 h-6 sm:w-8 sm:h-8 text-royal-gold" />
+                          <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-2xl bg-royal-gold/10 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                            <Icon className="w-5 h-5 sm:w-8 sm:h-8 text-royal-gold" />
                           </div>
-                          <span className="text-[10px] sm:text-xs font-black text-white uppercase tracking-widest text-center leading-tight">
+                          <span className="text-[9px] sm:text-xs font-black text-white uppercase tracking-widest text-center leading-tight">
                             {cat}
                           </span>
                         </motion.button>
@@ -4706,12 +5341,12 @@ function App() {
                       whileHover={{ scale: 1.05, y: -5 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={() => setIsAddingNewCategoryBulk(true)}
-                      className="flex flex-col items-center justify-center p-6 sm:p-8 rounded-[2rem] bg-white/5 border border-dashed border-white/20 hover:border-royal-gold/50 hover:bg-white/10 transition-all group aspect-square"
+                      className="flex flex-col items-center justify-center p-4 sm:p-8 rounded-xl sm:rounded-[2rem] bg-white/5 border border-dashed border-white/20 hover:border-royal-gold/50 hover:bg-white/10 transition-all group aspect-square"
                     >
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-4">
-                        <Plus className="w-6 h-6 sm:w-8 sm:h-8 text-slate-500" />
+                      <div className="w-10 h-10 sm:w-16 sm:h-16 rounded-2xl bg-white/5 flex items-center justify-center mb-3">
+                        <Plus className="w-5 h-5 sm:w-8 sm:h-8 text-slate-500" />
                       </div>
-                      <span className="text-[10px] sm:text-xs font-black text-slate-500 uppercase tracking-widest text-center">
+                      <span className="text-[9px] sm:text-xs font-black text-slate-500 uppercase tracking-widest text-center">
                         New Category
                       </span>
                     </motion.button>
@@ -4724,9 +5359,9 @@ function App() {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 20 }}
-                        className="mt-8 p-6 bg-white/5 rounded-[2rem] border border-royal-gold/30"
+                        className="mt-4 sm:mt-8 p-4 sm:p-6 bg-white/5 rounded-2xl sm:rounded-[2rem] border border-royal-gold/30"
                       >
-                        <label className="text-[9px] font-black text-royal-gold uppercase tracking-[0.4em] mb-4 block">Enter Category Name</label>
+                        <label className="text-[9px] font-black text-royal-gold uppercase tracking-[0.4em] mb-3 block">Enter Category Name</label>
                         <div className="flex gap-3">
                           <input 
                             type="text"
@@ -4734,7 +5369,7 @@ function App() {
                             onChange={(e) => setBulkCategory(e.target.value)}
                             placeholder="e.g. Science Quiz"
                             autoFocus
-                            className="flex-1 px-6 py-4 bg-black/40 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white text-sm uppercase tracking-widest"
+                            className="flex-1 px-4 py-3 bg-black/40 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white text-xs sm:text-sm uppercase tracking-widest"
                           />
                           <button 
                             onClick={() => {
@@ -4748,7 +5383,7 @@ function App() {
                               }
                               setIsAddingNewCategoryBulk(false);
                             }}
-                            className="px-8 bg-royal-gold text-black rounded-2xl font-black text-xs uppercase tracking-widest"
+                            className="px-5 sm:px-8 bg-royal-gold text-black rounded-xl sm:rounded-2xl font-black text-xs uppercase tracking-widest"
                           >
                             NEXT
                           </button>
@@ -4779,8 +5414,8 @@ function App() {
                   </div>
 
                   {/* Photo Grid */}
-                  <div className="flex-1 overflow-y-auto p-4 sm:p-8 no-scrollbar bg-black/20">
-                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 sm:gap-6">
+                  <div className="flex-1 overflow-y-auto p-3 sm:p-8 no-scrollbar bg-black/20">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 sm:gap-6">
                       {data.students.map((student) => {
                         const currentVal = parseFloat(bulkPoints[student.id] || "0");
                         const isActive = currentVal !== 0;
@@ -4800,7 +5435,7 @@ function App() {
                           >
                             {/* Student Photo */}
                             <div className={cn(
-                              "w-full h-full rounded-2xl sm:rounded-[2rem] overflow-hidden border-2 transition-all duration-500 shadow-xl",
+                              "w-full h-full rounded-xl sm:rounded-[2rem] overflow-hidden border-2 transition-all duration-500 shadow-xl",
                               isActive ? "border-royal-gold shadow-[0_0_30px_rgba(255,215,0,0.2)]" : "border-white/10"
                             )}>
                               {student.photo ? (
@@ -4990,13 +5625,13 @@ function App() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-slate-950 w-full max-w-md rounded-[3rem] p-12 shadow-3xl border border-white/10 overflow-hidden"
+              className="relative bg-slate-950 w-full max-w-md rounded-2xl sm:rounded-[2.5rem] p-6 sm:p-10 shadow-3xl border border-white/10 overflow-hidden"
             >
               <div className="absolute -top-24 -right-24 w-48 h-48 royal-gradient-emerald opacity-10 blur-[80px] rounded-full" />
-              <div className="flex items-center justify-between mb-10 relative z-10">
-                <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Enroll Student</h2>
+              <div className="flex items-center justify-between mb-8 sm:mb-10 relative z-10">
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">Enroll Student</h2>
                 <button onClick={() => setShowAddStudent(false)} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-xl">
-                  <X className="w-8 h-8" />
+                  <X className="w-6 h-6 sm:w-7 sm:h-7" />
                 </button>
               </div>
               <form onSubmit={async (e) => {
@@ -5005,18 +5640,18 @@ function App() {
                 await fetch("/api/students", { method: "POST", body: formData });
                 setShowAddStudent(false);
                 fetchData();
-              }} className="space-y-8 relative z-10">
-                <div className="space-y-3">
+              }} className="space-y-6 sm:space-y-8 relative z-10">
+                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Royal Full Name</label>
                   <input 
                     name="name"
                     type="text" 
                     required
                     placeholder="e.g. Stephen Ludia" 
-                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
+                    className="w-full px-5 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
                   />
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">
                     Royal Roll Number (Auto-populated next)
                   </label>
@@ -5025,19 +5660,19 @@ function App() {
                     type="text" 
                     placeholder="e.g. 54321" 
                     defaultValue={getNextRollNumber(data.students)}
-                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
+                    className="w-full px-5 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
                   />
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Royal Portrait</label>
                   <input 
                     name="photo"
                     type="file" 
                     accept="image/*"
-                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-slate-500 font-black text-xs file:mr-6 file:py-2 file:px-6 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:royal-gradient-gold file:text-black hover:file:scale-105 transition-all"
+                    className="w-full px-5 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-slate-500 font-black text-xs file:mr-4 file:py-1.5 file:px-4 file:rounded-xl file:border-0 file:text-[10px] file:font-black file:royal-gradient-gold file:text-black hover:file:scale-105 transition-all"
                   />
                 </div>
-                <button className="w-full royal-gradient-gold text-black py-6 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
+                <button className="w-full royal-gradient-gold text-black py-3.5 sm:py-5 rounded-xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
                   ENROLL IN ACADEMY
                 </button>
               </form>
@@ -5061,13 +5696,13 @@ function App() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-slate-950 w-full max-w-md rounded-[3rem] p-12 shadow-3xl border border-white/10 overflow-hidden"
+              className="relative bg-slate-950 w-full max-w-md rounded-2xl sm:rounded-[2.5rem] p-6 sm:p-10 shadow-3xl border border-white/10 overflow-hidden"
             >
               <div className="absolute -top-24 -right-24 w-48 h-48 royal-gradient-gold opacity-10 blur-[80px] rounded-full" />
-              <div className="flex items-center justify-between mb-10 relative z-10">
-                <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Bestow Marks</h2>
+              <div className="flex items-center justify-between mb-8 sm:mb-10 relative z-10">
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">Bestow Marks</h2>
                 <button onClick={() => setShowAddPoints(null)} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-xl">
-                  <X className="w-8 h-8" />
+                  <X className="w-6 h-6 sm:w-7 sm:h-7" />
                 </button>
               </div>
               <form onSubmit={async (e) => {
@@ -5088,8 +5723,8 @@ function App() {
                 setIsAddingNewCategorySingle(false);
                 setSingleCategory("");
                 fetchData();
-              }} className="space-y-8 relative z-10">
-                <div className="space-y-3">
+              }} className="space-y-6 sm:space-y-8 relative z-10">
+                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Points Amount</label>
                   <input 
                     name="points"
@@ -5097,10 +5732,10 @@ function App() {
                     step="any"
                     required
                     placeholder="e.g. 50" 
-                    className="w-full px-8 py-6 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black text-4xl text-center placeholder:text-slate-800"
+                    className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black text-3xl sm:text-4xl text-center placeholder:text-slate-800"
                   />
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Category</label>
                   <div className="space-y-3">
                     {!isAddingNewCategorySingle ? (
@@ -5112,7 +5747,7 @@ function App() {
                             setIsAddingNewCategorySingle(true);
                           }
                         }}
-                        className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-widest cursor-pointer appearance-none"
+                        className="w-full px-5 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-widest cursor-pointer appearance-none"
                       >
                         <option value="" disabled selected className="bg-slate-900">Select Category</option>
                         {dynamicCategories.map(cat => (
@@ -5123,18 +5758,18 @@ function App() {
                     ) : (
                       <div className="flex gap-2">
                         <input 
-                          type="text"
-                          value={singleCategory || ""}
-                          onChange={(e) => setSingleCategory(e.target.value)}
-                          placeholder="Enter new category"
-                          required
-                          autoFocus
-                          className="flex-1 px-8 py-5 bg-white/5 border border-royal-gold/50 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white uppercase tracking-widest"
+                           type="text"
+                           value={singleCategory || ""}
+                           onChange={(e) => setSingleCategory(e.target.value)}
+                           placeholder="Enter new category"
+                           required
+                           autoFocus
+                           className="flex-1 px-5 py-3 sm:py-4 bg-white/5 border border-royal-gold/50 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none font-black text-white uppercase tracking-widest"
                         />
                         <button 
                           type="button"
                           onClick={() => setIsAddingNewCategorySingle(false)}
-                          className="px-4 bg-white/10 rounded-2xl text-slate-400 hover:text-white transition-colors"
+                          className="px-4 bg-white/10 rounded-xl text-slate-400 hover:text-white transition-colors"
                         >
                           <X className="w-5 h-5" />
                         </button>
@@ -5142,16 +5777,16 @@ function App() {
                     )}
                   </div>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Date</label>
                   <input 
                     name="date"
                     type="date" 
                     defaultValue={format(new Date(), "yyyy-MM-dd")}
-                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-widest cursor-pointer"
+                    className="w-full px-5 py-3 sm:py-4 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-widest cursor-pointer"
                   />
                 </div>
-                <button className="w-full royal-gradient-gold text-black py-6 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
+                <button className="w-full royal-gradient-gold text-black py-3.5 sm:py-5 rounded-xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
                   AWARD ROYAL POINTS
                 </button>
               </form>
@@ -5175,33 +5810,33 @@ function App() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-slate-950 w-full max-w-2xl rounded-[3rem] p-6 sm:p-12 shadow-3xl border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
+              className="relative bg-slate-950 w-full max-w-2xl rounded-2xl sm:rounded-[2.5rem] p-5 sm:p-10 shadow-3xl border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
             >
               <div className="absolute -top-24 -left-24 w-48 h-48 royal-gradient-gold opacity-10 blur-[80px] rounded-full" />
               
-              <div className="flex items-center justify-between mb-8 relative z-10 shrink-0">
+              <div className="flex items-center justify-between mb-6 sm:mb-8 relative z-10 shrink-0">
                 <div>
-                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">Configure Team</h2>
+                  <h2 className="text-xl sm:text-2xl font-black text-white tracking-tighter uppercase">Configure Team</h2>
                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mt-1">Group Management</p>
                 </div>
                 <button onClick={() => setEditingGroup(null)} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-xl">
-                  <X className="w-8 h-8" />
+                  <X className="w-6 h-6 sm:w-8 sm:h-8" />
                 </button>
               </div>
 
-              <div className="space-y-8 relative z-10 overflow-y-auto pr-2 custom-scrollbar">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-                    <div className="space-y-3">
+              <div className="space-y-6 relative z-10 overflow-y-auto pr-2 custom-scrollbar">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-8">
+                    <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Team Name</label>
                       <input 
                         type="text" 
                         value={editingGroup.name || ""}
                         onChange={(e) => setEditingGroup({ ...editingGroup, name: e.target.value })}
                         placeholder="Enter team name..." 
-                        className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black tracking-tight placeholder:text-slate-800"
+                        className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black tracking-tight placeholder:text-slate-800"
                       />
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Team Key (Numeric)</label>
                       <input 
                         type="text" 
@@ -5209,7 +5844,7 @@ function App() {
                         value={editingGroup.key || ""}
                         onChange={(e) => setEditingGroup({ ...editingGroup, key: e.target.value.replace(/\D/g, '') })}
                         placeholder="e.g. 1234" 
-                        className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black tracking-tight placeholder:text-slate-800"
+                        className="w-full px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black tracking-tight placeholder:text-slate-800"
                       />
                     </div>
                   </div>
@@ -5269,7 +5904,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="pt-8 mt-4 border-t border-white/5 relative z-10 shrink-0">
+              <div className="pt-6 mt-4 border-t border-white/5 relative z-10 shrink-0">
                 <button 
                   onClick={async () => {
                     await setDoc(doc(db, "tender_groups", editingGroup.id), {
@@ -5278,7 +5913,7 @@ function App() {
                     });
                     setEditingGroup(null);
                   }}
-                  className="w-full royal-gradient-gold text-black py-6 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase"
+                  className="w-full royal-gradient-gold text-black py-3.5 sm:py-5 rounded-xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase"
                 >
                   Save Team Configuration
                 </button>
@@ -5305,16 +5940,16 @@ function App() {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative bg-slate-950 w-full max-w-md rounded-[3rem] p-12 shadow-3xl border border-white/10 overflow-hidden"
+              className="relative bg-slate-950 w-full max-w-md rounded-2xl sm:rounded-[2.5rem] p-6 sm:p-10 shadow-3xl border border-white/10 overflow-hidden"
             >
               <div className="absolute -top-24 -left-24 w-48 h-48 royal-gradient-gold opacity-10 blur-[80px] rounded-full" />
-              <div className="flex items-center justify-between mb-10 relative z-10">
-                <h2 className="text-3xl font-black text-white tracking-tighter uppercase">Add to Gallery</h2>
+              <div className="flex items-center justify-between mb-8 sm:mb-10 relative z-10">
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tighter uppercase">Add to Gallery</h2>
                 <button onClick={() => setShowAddGallery(false)} className="text-slate-500 hover:text-white transition-colors p-2 hover:bg-white/5 rounded-xl">
-                  <X className="w-8 h-8" />
+                  <X className="w-6 h-6 sm:w-8 sm:h-8" />
                 </button>
               </div>
-              <form onSubmit={handleAddGallery} className="space-y-8 relative z-10">
+              <form onSubmit={handleAddGallery} className="space-y-6 sm:space-y-8 relative z-10">
                 <div className="space-y-3">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Image URL</label>
                   <input 
@@ -5323,20 +5958,20 @@ function App() {
                     placeholder="https://example.com/image.jpg" 
                     value={newGalleryUrl || ""}
                     onChange={(e) => setNewGalleryUrl(e.target.value)}
-                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black tracking-tight placeholder:text-slate-800"
+                    className="w-full px-5 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black tracking-tight placeholder:text-slate-800"
                   />
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-2">Caption (Optional)</label>
                   <input 
                     type="text" 
                     placeholder="e.g. Annual Sports Day 2024" 
                     value={newGalleryCaption || ""}
                     onChange={(e) => setNewGalleryCaption(e.target.value)}
-                    className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
+                    className="w-full px-5 py-3 bg-white/5 border border-white/10 rounded-xl focus:ring-2 focus:ring-royal-gold outline-none text-white font-black uppercase tracking-tight placeholder:text-slate-800"
                   />
                 </div>
-                <button className="w-full royal-gradient-gold text-black py-6 rounded-2xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
+                <button className="w-full royal-gradient-gold text-black py-3.5 sm:py-5 rounded-xl font-black shadow-2xl shadow-royal-gold/20 hover:scale-[1.02] transition-all tracking-[0.2em] uppercase">
                   PUBLISH TO GALLERY
                 </button>
               </form>
